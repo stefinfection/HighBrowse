@@ -2,6 +2,8 @@ import socket
 import tkinter
 import tkinter.font
 from dataclasses import dataclass
+from dataclasses import field
+from typing import List, Tuple
 
 
 @dataclass
@@ -19,32 +21,81 @@ class Tag:
 class ElementNode:
     tag: str
     children: []
-    parent: None
+    parent: 'ElementNode'
     attributes: {}
 
 
 @dataclass
 class TextNode:
     text: str
-    parent: None
+    parent: 'TextNode'
 
 
 @dataclass
-class Block:
-    x: float    # TODO: should these be floats or ints?
-    y: float
-    w: float
+class BlockLayout:
+    parent: 'BlockLayout' or 'Page'
+    node: ElementNode or TextNode
+    children: List['BlockLayout' or 'InlineLayout'] = field(default_factory=list)
+    x: int = 0
+    y: int = 0
+    w: int = 0
+    h: int = 0
+
+    def __post_init__(self):
+        if type(self.parent) is not None:
+            self.parent.children.append(self)
+            self.x = self.parent.x
+            self.w = self.parent.w
+        if type(self.parent) is BlockLayout:
+            self.y = self.parent.y + self.parent.h
+        elif type(self.parent) is Page:
+            self.y = self.parent.y
+
+    def layout(self):
+        y = self.y
+        if any(is_inline(child) for child in self.node.children):
+            layout = InlineLayout(parent=self)
+            layout.layout(self.node)
+            y += layout.get_height()
+            self.h = y - self.y
+        else:
+            for child in self.node.children:
+                if isinstance(child, TextNode) and child.text.isspace():
+                    continue
+                layout = BlockLayout(parent=self, node=child)
+                layout.layout()
+                y += layout.get_height()
+                self.h = y - self.y
+
+
+    def get_height(self):
+        return self.h
+
+    def get_display_list(self):
+        dl = []
+        for child in self.children:
+            dl.extend(child.get_display_list())
+        return dl
 
 
 @dataclass
 class InlineLayout:
-    parent: Block
-    x: float
-    y: float
-    bold_count: int
-    italic_count: int
-    terminal_space: bool
-    dl: []
+    parent: BlockLayout
+    dl: List[Tuple[int, int, str, tkinter.font.Font]] = field(default_factory=list)
+    x: int = 0
+    y: int = 0
+    bold_count: int = 0
+    italic_count: int = 0
+    terminal_space: bool = True
+
+    def __post_init__(self):
+        if type(self.parent) is not None:
+            self.x = self.parent.x
+            self.parent.children.append(self)
+        if type(self.parent) is BlockLayout:
+            self.y = self.parent.y + self.parent.h
+        elif type(self.parent) is Page:
+            self.y = self.parent.y
 
     # Lays out the argument node, and all of its descendants.
     def layout(self, node):
@@ -93,6 +144,7 @@ class InlineLayout:
             if self.x + w > self.parent.x + self.parent.w:
                 self.y += font.metrics("linespace") * 1.2
                 self.x = self.parent.x
+
             self.dl.append((self.x, self.y, word, font))
 
             # update x to include word width AND a space if we're not at the end of the line
@@ -108,6 +160,10 @@ class InlineLayout:
         font = self.get_font()
         return self.y + font.metrics("linespace") * 1.2 - self.parent.y
 
+    # Returns this display list.
+    def get_display_list(self):
+        return self.dl
+
     # Returns the font based on the bold and italic class variables.
     def get_font(self):
         fonts = {  # (bold, italic) -> font
@@ -117,6 +173,14 @@ class InlineLayout:
             (True, True): tkinter.font.Font(family="Times", size=16, weight="bold", slant="italic"),
         }
         return fonts[self.bold_count > 0, self.italic_count > 0]
+
+
+@dataclass
+class Page:
+    children: []
+    x: int = 13
+    y: int = 13
+    w: int = 774
 
 
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
@@ -214,82 +278,14 @@ def populate_tree(tokens):
     return current_node
 
 
-# A recursive function which takes in a tree node and a state holding x, y, bold, italic, terminal space states.
-# For each child provided in the element node, layout will be called again and the state updated accordingly.
-# def layout(node, state):
-#     if isinstance(node, ElementNode):
-#         state = layout_open(node, state)
-#         for child in node.children:
-#             state = layout(child, state)
-#         state = layout_close(node, state)
-#     else:
-#         state = layout_text(node, state)
-#     return state
+# Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
+def is_inline(node):
+    return (isinstance(node, TextNode) and not node.text.isspace()) or \
+           (isinstance(node, ElementNode) and node.tag in ["b", "i"])
 
-
-# Sets current layout state based on the open tag provided
-# def layout_open(node, state):
-#     x, y, bold_count, italic_count, terminal_space, display_list = state
-#
-#     if node.tag == "i":
-#         italic_count += 1
-#     elif node.tag == "b":
-#         bold_count += 1
-#     elif node.tag == "br":
-#         x = 13
-#         y += (get_font(bold_count > 0, italic_count > 0)).metrics("linespace") * 1.2
-#
-#     return x, y, bold_count, italic_count, terminal_space, display_list
-
-
-# Sets the current layout state based on the close tag provided
-# def layout_close(node, state):
-#     # print("Close called: ", node.tag, "\n")
-#     x, y, bold_count, italic_count, terminal_space, display_list = state
-#
-#     if node.tag == "i":
-#         italic_count -= 1
-#     elif node.tag == "b":
-#         bold_count -= 1
-#     elif node.tag == "p":
-#         terminal_space = True
-#         x = 13
-#         y += (get_font(bold_count > 0, italic_count > 0)).metrics("linespace") * 1.2 + 16
-#
-#     return x, y, bold_count, italic_count, terminal_space, display_list
-
-
-# Utilizes the current layout state to create a display list entry for the text provided
-# def layout_text(node, state):
-    # x, y, bold_count, italic_count, terminal_space, display_list = state
-    # font = get_font(bold_count > 0, italic_count > 0)
-    #
-    # # account for entry space if present
-    # if node.text[0].isspace() and not terminal_space:
-    #     x += font.measure(" ")
-    #
-    # # iterate through words on line
-    # words = node.text.split()
-    #
-    # for i, word in enumerate(words):
-    #     w = font.measure(word)
-    #     if x + w >= 787:
-    #         y += font.metrics("linespace") * 1.2
-    #         x = 13
-    #     display_list.append((x, y, word, font))
-    #
-    #     # update x to include word width AND a space if we're not at the end of the line
-    #     x += w + (0 if i == len(words) - 1 else font.measure(" "))
-    #
-    # # udpate x to include a whitespace if last char in line really is one
-    # terminal_space = node.text[-1].isspace()
-    # if terminal_space and words:
-    #     x += font.measure(" ")
-    #
-    # return x, y, bold_count, italic_count, terminal_space, display_list
 
 # Renders the provided nodes. Binds scrolling keys.
-def show(nodes):
+def show(head_node):
     window = tkinter.Tk()
     canvas = tkinter.Canvas(window, width=800, height=600)
     canvas.pack()
@@ -298,14 +294,12 @@ def show(nodes):
     scroll_y = 0
     page_padding = 13
     window_height = 600
-    # state = (13, 13, 0, 0, True, [])
-    # _, _, _, _, _, display_list = layout(nodes, state)
 
-    page = Block(13, 13, 774)
-    mode = InlineLayout(page, page.x, page.y, 0, 0, True, [])
-    mode.layout(nodes)
+    page = Page(children=[])
+    mode = BlockLayout(parent=page, node=head_node)
+    mode.layout()
     max_h = mode.get_height()
-    display_list = mode.dl
+    display_list = mode.get_display_list()
 
     def render():
         canvas.delete("all")
