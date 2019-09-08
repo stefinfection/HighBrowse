@@ -40,19 +40,45 @@ class BlockLayout:
     y: int = 0
     w: int = 0
     h: int = 0
+    mt: int = 0
+    mr: int = 0
+    mb: int = 0
+    ml: int = 0
+    pt: int = 0
+    pr: int = 0
+    pb: int = 0
+    pl: int = 0
+    bt: int = 0
+    br: int = 0
+    bb: int = 0
+    bl: int = 0
 
     def __post_init__(self):
+        if self.node.tag == "p":
+            self.mb = 16
+        elif self.node.tag == "ul":
+            self.mt = self.mb = 16
+            self.pl = 20
+        elif self.node.tag == "li":
+            self.mb = 8
+        elif self.node.tag == "pre":
+            self.mr = self.ml = 8
+            self.bt = self.br = self.bb = self.bl = 1
+            self.pt = self.pr = self.pb = self.pl = 8
         if type(self.parent) is not None:
             self.parent.children.append(self)
-            self.x = self.parent.x
-            self.w = self.parent.w
         if type(self.parent) is BlockLayout:
+            self.x = self.parent.content_left()
+            self.w = self.parent.content_width()
             self.y = self.parent.y + self.parent.h
         elif type(self.parent) is Page:
+            self.x = self.parent.x
+            self.w = self.parent.w
             self.y = self.parent.y
 
     def layout(self):
         y = self.y
+
         if any(is_inline(child) for child in self.node.children):
             layout = InlineLayout(parent=self)
             layout.layout(self.node)
@@ -64,9 +90,11 @@ class BlockLayout:
                     continue
                 layout = BlockLayout(parent=self, node=child)
                 layout.layout()
-                y += layout.get_height()
+                y += layout.get_height() + layout.pt + layout.pb + layout.bt + layout.bb + layout.mt + layout.mb
+                self.x += layout.ml
+                self.y += layout.mt
+                self.w -= layout.ml - layout.mr
                 self.h = y - self.y
-
 
     def get_height(self):
         return self.h
@@ -75,13 +103,39 @@ class BlockLayout:
         dl = []
         for child in self.children:
             dl.extend(child.get_display_list())
+            if self.bl > 0:
+                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h))
+            if self.br > 0:
+                dl.append(DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h))
+            if self.bt > 0:
+                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt))
+            if self.bb > 0:
+                dl.append(DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h))
         return dl
+
+    def content_left(self):
+        return self.x + self.bl + self.pl
+
+    def content_right(self):
+        return self.x + self.br + self.pr
+
+    def content_top(self):
+        return self.y + self.bt + self.pt
+
+    def content_bottom(self):
+        return self.y + self.bb + self.pb
+
+    def content_width(self):
+        return self.w - self.bl - self.br - self.pl - self.pr
+
+    def content_height(self):
+        return self.h - self.bb - self.bt - self.pb - self.pt
 
 
 @dataclass
 class InlineLayout:
     parent: BlockLayout
-    dl: List[Tuple[int, int, str, tkinter.font.Font]] = field(default_factory=list)
+    dl: List['DrawText' or 'DrawRect'] = field(default_factory=list)
     x: int = 0
     y: int = 0
     bold_count: int = 0
@@ -90,11 +144,12 @@ class InlineLayout:
 
     def __post_init__(self):
         if type(self.parent) is not None:
-            self.x = self.parent.x
             self.parent.children.append(self)
         if type(self.parent) is BlockLayout:
-            self.y = self.parent.y + self.parent.h
+            self.x = self.parent.content_left()
+            self.y = self.parent.content_top() + self.parent.h
         elif type(self.parent) is Page:
+            self.x = self.parent.x
             self.y = self.parent.y
 
     # Lays out the argument node, and all of its descendants.
@@ -141,11 +196,11 @@ class InlineLayout:
         for i, word in enumerate(words):
             w = font.measure(word)
             # check if we need to line break
-            if self.x + w > self.parent.x + self.parent.w:
+            if self.x + w > self.parent.content_left() + self.parent.content_width():
                 self.y += font.metrics("linespace") * 1.2
-                self.x = self.parent.x
+                self.x = self.parent.content_left()
 
-            self.dl.append((self.x, self.y, word, font))
+            self.dl.append(DrawText(self.x, self.y, word, font))
 
             # update x to include word width AND a space if we're not at the end of the line
             self.x += w + (0 if i == len(words) - 1 else font.measure(" "))
@@ -181,6 +236,28 @@ class Page:
     x: int = 13
     y: int = 13
     w: int = 774
+
+
+@dataclass
+class DrawText:
+    x: int
+    y: int
+    text: str
+    font: tkinter.font.Font
+
+    def draw(self, scroll_y, canvas):
+        canvas.create_text(self.x, self.y - scroll_y, text=self.text, font=self.font, anchor='nw')
+
+
+@dataclass
+class DrawRect:
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+    def draw(self, scroll_y, canvas):
+        canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill="black")
 
 
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
@@ -303,8 +380,8 @@ def show(head_node):
 
     def render():
         canvas.delete("all")
-        for x, y, w, f in display_list:
-            canvas.create_text(x, y - scroll_y, text=w, font=f, anchor='nw')
+        for cmd in display_list:
+            cmd.draw(scroll_y, canvas)
 
     def scroll_down(e):
         nonlocal scroll_y
