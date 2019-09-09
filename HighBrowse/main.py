@@ -34,7 +34,7 @@ class TextNode:
 @dataclass
 class BlockLayout:
     parent: 'BlockLayout' or 'Page'
-    node: ElementNode or TextNode
+    node: ElementNode
     children: List['BlockLayout' or 'InlineLayout'] = field(default_factory=list)
     x: int = 0
     y: int = 0
@@ -52,33 +52,43 @@ class BlockLayout:
     br: int = 0
     bb: int = 0
     bl: int = 0
+    border_color: str = ""
+    background_color: str = ""
 
     def __post_init__(self):
-        if self.node.tag == "p":
-            self.mb = 16
-        elif self.node.tag == "ul":
-            self.mt = self.mb = 16
-            self.pl = 20
-        elif self.node.tag == "li":
-            self.mb = 8
-        elif self.node.tag == "pre":
-            self.mr = self.ml = 8
-            self.bt = self.br = self.bb = self.bl = 1
-            self.pt = self.pr = self.pb = self.pl = 8
+        if isinstance(self.node, ElementNode):
+            if self.node.tag == "p":
+                self.mb = 16
+            elif self.node.tag == "ul":
+                self.mt = self.mb = 16
+                self.pl = 20
+            elif self.node.tag == "li":
+                self.mb = 8
+            elif self.node.tag == "pre":
+                self.mr = self.ml = 8
+                self.bt = self.br = self.bb = self.bl = 1
+                self.pt = self.pr = self.pb = self.pl = 8
+                # TODO: Assign3
+                # self.background_color = "red"
+            elif self.node.tag == "h2":
+                self.bb = 1
+                self.border_color = "magenta"
+            # TODO: Assign1
+            elif self.node.tag == "body" or self.node.tag == "title":
+                self.pt = self.pr = self.pb = self.pl = 13
+
         if type(self.parent) is not None:
             self.parent.children.append(self)
         if type(self.parent) is BlockLayout:
             self.x = self.parent.content_left()
-            self.w = self.parent.content_width()
             self.y = self.parent.y + self.parent.h
+            self.w = self.parent.content_width()
+        # TODO: Assign1
         elif type(self.parent) is Page:
-            self.x = self.parent.x
             self.w = self.parent.w
-            self.y = self.parent.y
 
     def layout(self):
         y = self.y
-
         if any(is_inline(child) for child in self.node.children):
             layout = InlineLayout(parent=self)
             layout.layout(self.node)
@@ -110,6 +120,7 @@ class BlockLayout:
             if self.bt > 0:
                 dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt))
             if self.bb > 0:
+                print("found a border on bottom")
                 dl.append(DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h))
         return dl
 
@@ -131,6 +142,12 @@ class BlockLayout:
     def content_height(self):
         return self.h - self.bb - self.bt - self.pb - self.pt
 
+    def block_width(self):
+        return self.w + self.bl + self.br + self.pl + self.pr
+
+    def block_height(self):
+        return self.h + self.bb + self.bt + self.pb + self.pt
+
 
 @dataclass
 class InlineLayout:
@@ -141,6 +158,8 @@ class InlineLayout:
     bold_count: int = 0
     italic_count: int = 0
     terminal_space: bool = True
+    border_color: str = ""
+    background_color: str = ""
 
     def __post_init__(self):
         if type(self.parent) is not None:
@@ -148,6 +167,8 @@ class InlineLayout:
         if type(self.parent) is BlockLayout:
             self.x = self.parent.content_left()
             self.y = self.parent.content_top() + self.parent.h
+            self.background_color = self.parent.background_color
+            self.border_color = self.parent.border_color
         elif type(self.parent) is Page:
             self.x = self.parent.x
             self.y = self.parent.y
@@ -200,6 +221,12 @@ class InlineLayout:
                 self.y += font.metrics("linespace") * 1.2
                 self.x = self.parent.content_left()
 
+            # TODO: assign3
+            if self.background_color != "":
+                self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right() + self.parent.content_width(), self.parent.content_bottom() - self.parent.content_height(),
+                                        width=10, background_color=self.background_color, border_color=self.background_color))
+            # if self.border_color != "":
+            #     self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right(), self.parent.content_bottom(), 0, self.border_color, ""))
             self.dl.append(DrawText(self.x, self.y, word, font))
 
             # update x to include word width AND a space if we're not at the end of the line
@@ -233,9 +260,9 @@ class InlineLayout:
 @dataclass
 class Page:
     children: []
-    x: int = 13
-    y: int = 13
-    w: int = 774
+    x: int = 0  # TODO: assign1
+    y: int = 0
+    w: int = 787
 
 
 @dataclass
@@ -255,11 +282,15 @@ class DrawRect:
     y1: int
     x2: int
     y2: int
+    # width: int
+    # border_color: str
+    # background_color: str
 
     def draw(self, scroll_y, canvas):
         canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill="black")
 
 
+# Networking Stuff
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
 # Reports an error if the argument does not start with http://
 # Defaults to port 80 if none provided.
@@ -312,6 +343,7 @@ def lex(source):
     return out
 
 
+# Node Stuff
 # Creates node tree for Text and Tags in HTML document.
 def populate_tree(tokens):
     current_node = None
@@ -398,7 +430,7 @@ def show(head_node):
     render()
     tkinter.mainloop()
 
-
+# Run Stuff
 # Gets the show on the road.
 def run(url):
     host, port, path, fragment = parse(url)
@@ -410,5 +442,5 @@ def run(url):
 
 if __name__ == "__main__":
     import sys
-    run(sys.argv[1])
 
+    run(sys.argv[1])
