@@ -113,17 +113,24 @@ class BlockLayout:
     def get_display_list(self):
         dl = []
         for child in self.children:
-            dl.extend(child.get_display_list())
             if self.bl > 0:
-                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h, self.border_color, self.background_color))
+                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h, self.border_color,
+                                   self.background_color))
             if self.br > 0:
-                dl.append(DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h, self.border_color, self.background_color))
+                dl.append(
+                    DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h, self.border_color,
+                             self.background_color))
             if self.bt > 0:
-                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt, self.border_color, self.background_color))
+                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt, self.border_color,
+                                   self.background_color))
             if self.bb > 0:
-                dl.append(DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.border_color, self.background_color))
+                dl.append(
+                    DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.border_color,
+                             self.background_color))
+            # TODO: Assign3
             if self.background_color != "":
-                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height(), self.border_color, self.background_color))
+                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height() + 10, self.border_color, self.background_color))
+            dl.extend(child.get_display_list())
         return dl
 
     def content_left(self):
@@ -155,13 +162,12 @@ class BlockLayout:
 class InlineLayout:
     parent: BlockLayout
     dl: List['DrawText' or 'DrawRect'] = field(default_factory=list)
+    dl_update_index: int = 0
     x: int = 0
     y: int = 0
     bold_count: int = 0
     italic_count: int = 0
     terminal_space: bool = True
-    border_color: str = ""
-    background_color: str = ""
 
     def __post_init__(self):
         if type(self.parent) is not None:
@@ -169,8 +175,6 @@ class InlineLayout:
         if type(self.parent) is BlockLayout:
             self.x = self.parent.content_left()
             self.y = self.parent.content_top() + self.parent.h
-            self.background_color = self.parent.background_color
-            self.border_color = self.parent.border_color
         elif type(self.parent) is Page:
             self.x = self.parent.x
             self.y = self.parent.y
@@ -194,6 +198,10 @@ class InlineLayout:
         elif node.tag == "br":
             self.x = 13
             self.y += self.get_font().metrics("linespace") * 1.2
+        # elif node.tag == "pre":
+        #     self.dl_update_index = len(self.dl)
+        #     self.dl.append(DrawRect(self.parent.x, self.parent.y, self.parent.block_width(),
+        #                             self.y, self.border_color, self.background_color))
 
     # Updates the styling and spacing state of this, according to the closing tag node argument.
     def close(self, node):
@@ -205,6 +213,8 @@ class InlineLayout:
             self.terminal_space = True
             self.x = 13
             self.y += self.get_font().metrics("linespace") * 1.2 + 16
+        # elif node.tag == "pre":
+        #     self.dl[self.dl_update_index].y2 = self.y + 20
 
     # Lays out the provided text node within the x & y bounds of its parent.
     def text(self, node):
@@ -223,14 +233,7 @@ class InlineLayout:
                 self.y += font.metrics("linespace") * 1.2
                 self.x = self.parent.content_left()
 
-            # TODO: assign3
-            # if self.background_color != "":
-            #     self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right() + self.parent.content_width(), self.parent.content_bottom() - self.parent.content_height(),
-            #             self.background_color))
-            # if self.border_color != "":
-            #     self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right(), self.parent.content_bottom(), 0, self.border_color, ""))
             self.dl.append(DrawText(self.x, self.y, word, font))
-
             # update x to include word width AND a space if we're not at the end of the line
             self.x += w + (0 if i == len(words) - 1 else font.measure(" "))
 
@@ -286,9 +289,6 @@ class DrawRect:
     y2: int
     outline: str
     background: str
-    # width: int
-    # border_color: str
-    # background_color: str
 
     def draw(self, scroll_y, canvas):
         if self.background != "":
