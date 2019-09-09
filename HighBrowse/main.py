@@ -3,7 +3,7 @@ import tkinter
 import tkinter.font
 from dataclasses import dataclass
 from dataclasses import field
-from typing import List, Tuple
+from typing import List
 
 
 @dataclass
@@ -68,14 +68,12 @@ class BlockLayout:
                 self.mr = self.ml = 8
                 self.bt = self.br = self.bb = self.bl = 1
                 self.pt = self.pr = self.pb = self.pl = 8
-                # TODO: Assign3
-                self.border_color = "cyan"
+                self.border_color = "cyan"                                  # TODO: Assign3
                 self.background_color = "cyan"
             elif self.node.tag == "h2":
                 self.bb = 1
                 self.border_color = "magenta"
-            # TODO: Assign1
-            elif self.node.tag == "body" or self.node.tag == "title":
+            elif self.node.tag == "body" or self.node.tag == "title":       # TODO: Assign1
                 self.pt = self.pr = self.pb = self.pl = 13
 
         if type(self.parent) is not None:
@@ -84,12 +82,12 @@ class BlockLayout:
             self.x = self.parent.content_left()
             self.y = self.parent.y + self.parent.h
             self.w = self.parent.content_width()
-        # TODO: Assign1
-        elif type(self.parent) is Page:
+        elif type(self.parent) is Page:                                     # TODO: Assign1
             self.w = self.parent.w
 
     def layout(self):
         y = self.y
+
         if any(is_inline(child) for child in self.node.children):
             layout = InlineLayout(parent=self)
             layout.layout(self.node)
@@ -129,7 +127,7 @@ class BlockLayout:
                              self.background_color))
             # TODO: Assign3
             if self.background_color != "":
-                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height() + 10, self.border_color, self.background_color))
+                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height(), self.border_color, self.background_color))
             dl.extend(child.get_display_list())
         return dl
 
@@ -198,10 +196,10 @@ class InlineLayout:
         elif node.tag == "br":
             self.x = 13
             self.y += self.get_font().metrics("linespace") * 1.2
-        # elif node.tag == "pre":
-        #     self.dl_update_index = len(self.dl)
-        #     self.dl.append(DrawRect(self.parent.x, self.parent.y, self.parent.block_width(),
-        #                             self.y, self.border_color, self.background_color))
+        elif node.tag == "li":      # TODO: Assign2
+            self.x = 13
+            self.dl.append(DrawRect(self.x, self.y + self.get_font().metrics("linespace") * 0.5 - 2, self.x + 4, self.y + self.get_font().metrics("linespace") * 0.5 + 2, "black", "black"))
+            self.x += self.get_font().measure("  ") + 4
 
     # Updates the styling and spacing state of this, according to the closing tag node argument.
     def close(self, node):
@@ -213,8 +211,9 @@ class InlineLayout:
             self.terminal_space = True
             self.x = 13
             self.y += self.get_font().metrics("linespace") * 1.2 + 16
-        # elif node.tag == "pre":
-        #     self.dl[self.dl_update_index].y2 = self.y + 20
+        elif node.tag == "li":      # TODO: Assign2
+            self.y += self.get_font().metrics("linespace") * 1.2
+            self.x = 13
 
     # Lays out the provided text node within the x & y bounds of its parent.
     def text(self, node):
@@ -234,6 +233,7 @@ class InlineLayout:
                 self.x = self.parent.content_left()
 
             self.dl.append(DrawText(self.x, self.y, word, font))
+
             # update x to include word width AND a space if we're not at the end of the line
             self.x += w + (0 if i == len(words) - 1 else font.measure(" "))
 
@@ -265,7 +265,7 @@ class InlineLayout:
 @dataclass
 class Page:
     children: []
-    x: int = 0  # TODO: assign1
+    x: int = 0              # TODO: Assign1
     y: int = 0
     w: int = 787
 
@@ -396,7 +396,7 @@ def populate_tree(tokens):
 # Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
 def is_inline(node):
     return (isinstance(node, TextNode) and not node.text.isspace()) or \
-           (isinstance(node, ElementNode) and node.tag in ["b", "i"])
+           (isinstance(node, ElementNode) and node.tag in ["b", "i", "li"])     # TODO: Assign2
 
 
 # Renders the provided nodes. Binds scrolling keys.
