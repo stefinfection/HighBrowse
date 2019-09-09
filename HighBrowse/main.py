@@ -69,7 +69,8 @@ class BlockLayout:
                 self.bt = self.br = self.bb = self.bl = 1
                 self.pt = self.pr = self.pb = self.pl = 8
                 # TODO: Assign3
-                # self.background_color = "red"
+                self.border_color = "cyan"
+                self.background_color = "cyan"
             elif self.node.tag == "h2":
                 self.bb = 1
                 self.border_color = "magenta"
@@ -114,14 +115,15 @@ class BlockLayout:
         for child in self.children:
             dl.extend(child.get_display_list())
             if self.bl > 0:
-                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h))
+                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h, self.border_color, self.background_color))
             if self.br > 0:
-                dl.append(DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h))
+                dl.append(DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h, self.border_color, self.background_color))
             if self.bt > 0:
-                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt))
+                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt, self.border_color, self.background_color))
             if self.bb > 0:
-                print("found a border on bottom")
-                dl.append(DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h))
+                dl.append(DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.border_color, self.background_color))
+            if self.background_color != "":
+                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height(), self.border_color, self.background_color))
         return dl
 
     def content_left(self):
@@ -143,10 +145,10 @@ class BlockLayout:
         return self.h - self.bb - self.bt - self.pb - self.pt
 
     def block_width(self):
-        return self.w + self.bl + self.br + self.pl + self.pr
+        return self.x + self.w
 
     def block_height(self):
-        return self.h + self.bb + self.bt + self.pb + self.pt
+        return self.y + self.h
 
 
 @dataclass
@@ -222,9 +224,9 @@ class InlineLayout:
                 self.x = self.parent.content_left()
 
             # TODO: assign3
-            if self.background_color != "":
-                self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right() + self.parent.content_width(), self.parent.content_bottom() - self.parent.content_height(),
-                                        width=10, background_color=self.background_color, border_color=self.background_color))
+            # if self.background_color != "":
+            #     self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right() + self.parent.content_width(), self.parent.content_bottom() - self.parent.content_height(),
+            #             self.background_color))
             # if self.border_color != "":
             #     self.dl.append(DrawRect(self.parent.content_left(), self.parent.content_top(), self.parent.content_right(), self.parent.content_bottom(), 0, self.border_color, ""))
             self.dl.append(DrawText(self.x, self.y, word, font))
@@ -282,12 +284,16 @@ class DrawRect:
     y1: int
     x2: int
     y2: int
+    outline: str
+    background: str
     # width: int
     # border_color: str
     # background_color: str
 
     def draw(self, scroll_y, canvas):
-        canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill="black")
+        if self.background != "":
+            canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill=self.outline)
+        canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill=self.outline)
 
 
 # Networking Stuff
