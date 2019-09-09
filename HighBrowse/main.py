@@ -82,12 +82,22 @@ class BlockLayout:
             self.x = self.parent.content_left()
             self.y = self.parent.y + self.parent.h
             self.w = self.parent.content_width()
-        elif type(self.parent) is Page:                                     # TODO: Assign1
+        elif type(self.parent) is Page and self.w == 0:                      # TODO: Assign1
             self.w = self.parent.w
+
+        if self.node.tag == "div" and "id" in self.node.attributes \
+                and self.node.attributes["id"] == "content":
+            self.w = 550                                                    # TODO: Assign4
+            self.pl = self.pr = 10
+            self.y = self.parent.content_top()
+        elif self.node.tag == "div" and "id" in self.node.attributes \
+                and self.node.attributes["id"] == "preamble":
+            self.w = 190
+            self.pr = 10
+            self.x = self.parent.content_width() - self.w
 
     def layout(self):
         y = self.y
-
         if any(is_inline(child) for child in self.node.children):
             layout = InlineLayout(parent=self)
             layout.layout(self.node)
@@ -99,9 +109,9 @@ class BlockLayout:
                     continue
                 layout = BlockLayout(parent=self, node=child)
                 layout.layout()
-                y += layout.get_height() + layout.pt + layout.pb + layout.bt + layout.bb + layout.mt + layout.mb
+                layout_height = layout.get_height() + layout.pt + layout.pb + layout.bt + layout.bb + layout.mt + layout.mb
+                y += layout_height
                 self.x += layout.ml
-                self.y += layout.mt
                 self.w -= layout.ml - layout.mr
                 self.h = y - self.y
 
@@ -194,10 +204,10 @@ class InlineLayout:
         elif node.tag == "b":
             self.bold_count += 1
         elif node.tag == "br":
-            self.x = 13
+            self.x = self.parent.x
             self.y += self.get_font().metrics("linespace") * 1.2
         elif node.tag == "li":      # TODO: Assign2
-            self.x = 13
+            self.x = self.parent.x
             self.dl.append(DrawRect(self.x, self.y + self.get_font().metrics("linespace") * 0.5 - 2, self.x + 4, self.y + self.get_font().metrics("linespace") * 0.5 + 2, "black", "black"))
             self.x += self.get_font().measure("  ") + 4
 
@@ -207,13 +217,9 @@ class InlineLayout:
             self.italic_count -= 1
         elif node.tag == "b":
             self.bold_count -= 1
-        elif node.tag == "p":
-            self.terminal_space = True
-            self.x = 13
-            self.y += self.get_font().metrics("linespace") * 1.2 + 16
         elif node.tag == "li":      # TODO: Assign2
-            self.y += self.get_font().metrics("linespace") * 1.2
-            self.x = 13
+            self.y += self.get_font().metrics("linespace") * 1.2 + 16
+            self.x = self.parent.x
 
     # Lays out the provided text node within the x & y bounds of its parent.
     def text(self, node):
