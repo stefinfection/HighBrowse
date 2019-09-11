@@ -23,6 +23,20 @@ class ElementNode:
     children: []
     parent: 'ElementNode'
     attributes: {}
+    style: {} = None
+    show_bullet: bool = False
+
+    def __post_init__(self):
+        self.style = self.compute_style()
+
+    def compute_style(self):
+        style = {}
+        style_value = self.attributes.get("style", "")
+        for line in style_value.split(";"):
+            if line != "":
+                prop, val = line.split(":")
+                style[prop.lower().strip()] = val.strip()
+        return style
 
 
 @dataclass
@@ -52,29 +66,26 @@ class BlockLayout:
     br: int = 0
     bb: int = 0
     bl: int = 0
-    border_color: str = ""
-    background_color: str = ""
 
     def __post_init__(self):
         if isinstance(self.node, ElementNode):
-            if self.node.tag == "p":
-                self.mb = 16
-            elif self.node.tag == "ul":
-                self.mt = self.mb = 16
-                self.pl = 20
-            elif self.node.tag == "li":
-                self.mb = 8
-            elif self.node.tag == "pre":
-                self.mr = self.ml = 8
-                self.bt = self.br = self.bb = self.bl = 1
-                self.pt = self.pr = self.pb = self.pl = 8
-                self.border_color = "cyan"                                  # TODO: Assign3
-                self.background_color = "cyan"
-            elif self.node.tag == "h2":
-                self.bb = 1
-                self.border_color = "magenta"
-            elif self.node.tag == "body" or self.node.tag == "title":       # TODO: Assign1
-                self.pt = self.pr = self.pb = self.pl = 13
+            # get margins
+            self.mt = strip_px(self.node.style.get("margin-top", "0px"))
+            self.mb = strip_px(self.node.style.get("margin-bottom", "0px"))
+            self.ml = strip_px(self.node.style.get("margin-left", "0px"))
+            self.mr = strip_px(self.node.style.get("margin-right", "0px"))
+
+            # get padding
+            self.pt = strip_px(self.node.style.get("padding-top", "0px"))
+            self.pb = strip_px(self.node.style.get("padding-bottom", "0px"))
+            self.pl = strip_px(self.node.style.get("padding-left", "0px"))
+            self.pr = strip_px(self.node.style.get("padding-right", "0px"))
+
+            # borders
+            self.bt = strip_px(self.node.style.get("border-top", "0px"))
+            self.bb = strip_px(self.node.style.get("border-bottom", "0px"))
+            self.bl = strip_px(self.node.style.get("border-left", "0px"))
+            self.br = strip_px(self.node.style.get("border-right", "0px"))
 
         if type(self.parent) is not None:
             self.parent.children.append(self)
@@ -82,21 +93,25 @@ class BlockLayout:
             self.x = self.parent.content_left()
             self.y = self.parent.y + self.parent.h
             self.w = self.parent.content_width()
-        elif type(self.parent) is Page and self.w == 0:                      # TODO: Assign1
+            if self.parent.node.tag == "li":
+                self.node.show_bullet = True
+        elif type(self.parent) is Page and self.w == 0:
             self.w = self.parent.w
 
-        if self.node.tag == "div" and "id" in self.node.attributes \
-                and self.node.attributes["id"] == "content":
-            self.w = 550                                                    # TODO: Assign4
-            self.pl = self.pr = 10
-            self.y = self.parent.content_top()
-        elif self.node.tag == "div" and "id" in self.node.attributes \
-                and self.node.attributes["id"] == "preamble":
-            self.w = 190
-            self.pr = 10
-            self.x = self.parent.content_width() - self.w
+        if isinstance(self.node, ElementNode):
+            if self.node.tag == "div" and "id" in self.node.attributes \
+                    and self.node.attributes["id"] == "content":
+                self.w = 550
+                self.pl = self.pr = 10
+                self.y = self.parent.content_top()
+            elif self.node.tag == "div" and "id" in self.node.attributes \
+                    and self.node.attributes["id"] == "preamble":
+                self.w = 190
+                self.pr = 10
+                self.x = self.parent.content_width() - self.w
 
     def layout(self):
+        assign5 = False
         y = self.y
         if any(is_inline(child) for child in self.node.children):
             layout = InlineLayout(parent=self)
@@ -104,16 +119,54 @@ class BlockLayout:
             y += layout.get_height()
             self.h = y - self.y
         else:
-            for child in self.node.children:
-                if isinstance(child, TextNode) and child.text.isspace():
+            # check to see if first child top margin overlaps with this top margin
+            # if so, adjust the y coordinate of first child
+            i = 0
+            while i < len(self.node.children):
+                first_child = self.node.children[i]
+                i += 1
+                if isinstance(first_child, TextNode) and first_child.text.isspace():
                     continue
-                layout = BlockLayout(parent=self, node=child)
-                layout.layout()
-                layout_height = layout.get_height() + layout.pt + layout.pb + layout.bt + layout.bb + layout.mt + layout.mb
-                y += layout_height
-                self.x += layout.ml
-                self.w -= layout.ml - layout.mr
-                self.h = y - self.y
+                else:
+                    layout = BlockLayout(parent=self, node=first_child)
+                    if self.mt > 0 and layout.mt > 0 and assign5 is True:
+                        min_m = min(self.mt, layout.mt)
+                        layout.y -= min_m
+                    layout.layout()
+                    layout_height = layout.get_height() + layout.pt + layout.pb + layout.bt + layout.bb + layout.mt + layout.mb
+                    y += layout_height
+                    self.x += layout.ml
+                    self.w -= layout.ml - layout.mr
+                    self.h = y - self.y
+                    break
+
+            # layout subsequent children if there are any
+            if i < len(self.node.children):
+                for j in range(i, len(self.node.children)):
+                    # check to see if this child's top margin can overlap with last child's bottom margin
+                    # if so, adjust the y coordinate of child
+                    child = self.node.children[j]
+                    if isinstance(child, TextNode) and child.text.isspace():
+                        continue
+                    layout = BlockLayout(parent=self, node=child)
+                    prev_layout = self.children[-1]
+                    if isinstance(prev_layout, BlockLayout) and prev_layout.mb > 0 \
+                            and isinstance(layout, BlockLayout) and layout.mt > 0 and assign5 is True:
+                        layout.y -= min(prev_layout.mb, layout.mt)
+
+                    layout.layout()
+                    layout_height = layout.get_height() + layout.pt + layout.pb + layout.bt + layout.bb + layout.mt + layout.mb
+                    y += layout_height
+                    self.x += layout.ml
+                    self.w -= layout.ml - layout.mr
+                    self.h = y - self.y
+
+                # check to see if last child bottom margin overlaps with this bottom margin
+                # if so, adjust the height of this layout
+                last_layout = self.children[-1]
+                if isinstance(last_layout, BlockLayout) \
+                        and last_layout.mb > 0 and self.mb > 0 and assign5 is True:
+                    self.h -= min(last_layout.mb, self.mb)
 
     def get_height(self):
         return self.h
@@ -122,22 +175,21 @@ class BlockLayout:
         dl = []
         for child in self.children:
             if self.bl > 0:
-                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h, self.border_color,
-                                   self.background_color))
+                dl.append(DrawRect(self.x, self.y, self.x + self.bl, self.y + self.h, self.node.style.get("border-color", "black"),
+                                   self.node.style.get("background-color", "")))
             if self.br > 0:
                 dl.append(
-                    DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h, self.border_color,
-                             self.background_color))
+                    DrawRect(self.x + self.w - self.br, self.y, self.x + self.w, self.y + self.h, self.node.style.get("border-color", "black"),
+                             self.node.style.get("background-color", "")))
             if self.bt > 0:
-                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt, self.border_color,
-                                   self.background_color))
+                dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt, self.node.style.get("border-color", "black"),
+                                   self.node.style.get("background-color", "")))
             if self.bb > 0:
                 dl.append(
-                    DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.border_color,
-                             self.background_color))
-            # TODO: Assign3
-            if self.background_color != "":
-                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height(), self.border_color, self.background_color))
+                    DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.node.style.get("border-color", "black"),
+                             self.node.style.get("background-color", "")))
+            if self.node.style.get("background-color", "") != "":
+                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height(), self.node.style.get("border-color", ""), self.node.style["background-color"]))
             dl.extend(child.get_display_list())
         return dl
 
@@ -170,7 +222,6 @@ class BlockLayout:
 class InlineLayout:
     parent: BlockLayout
     dl: List['DrawText' or 'DrawRect'] = field(default_factory=list)
-    dl_update_index: int = 0
     x: int = 0
     y: int = 0
     bold_count: int = 0
@@ -206,7 +257,7 @@ class InlineLayout:
         elif node.tag == "br":
             self.x = self.parent.x
             self.y += self.get_font().metrics("linespace") * 1.2
-        elif node.tag == "li":      # TODO: Assign2
+        elif node.tag == "li" or node.show_bullet is True:
             self.x = self.parent.x
             self.dl.append(DrawRect(self.x, self.y + self.get_font().metrics("linespace") * 0.5 - 2, self.x + 4, self.y + self.get_font().metrics("linespace") * 0.5 + 2, "black", "black"))
             self.x += self.get_font().measure("  ") + 4
@@ -217,8 +268,7 @@ class InlineLayout:
             self.italic_count -= 1
         elif node.tag == "b":
             self.bold_count -= 1
-        elif node.tag == "li":      # TODO: Assign2
-            self.y += self.get_font().metrics("linespace") * 1.2 + 16
+        elif node.tag == "li":
             self.x = self.parent.x
 
     # Lays out the provided text node within the x & y bounds of its parent.
@@ -271,7 +321,7 @@ class InlineLayout:
 @dataclass
 class Page:
     children: []
-    x: int = 0              # TODO: Assign1
+    x: int = 0
     y: int = 0
     w: int = 787
 
@@ -302,6 +352,156 @@ class DrawRect:
         canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill=self.outline)
 
 
+@dataclass(frozen=True)
+class TagSelector:
+    tag: str
+
+    def matches(self, node):
+        return self.tag == node.tag
+
+    @staticmethod
+    def score():
+        return 1
+
+
+@dataclass(frozen=True)
+class ClassSelector:
+    clazz: str
+
+    # TODO: this code doesn't make sense to me
+    def matches(self, node):
+        return self.clazz == node.attributes.get("class", "").split()
+
+    @staticmethod
+    def score():
+        return 16
+
+
+@dataclass(frozen=True)
+class IdSelector:
+    id: str
+
+    def matches(self, node):
+        return self.id == node.attributes.get("id", "").split()
+
+    @staticmethod
+    def score():
+        return 256
+
+
+# CSS parsing
+def css_value(s, i):
+    j = i
+    while s[j].isalnum() or s[j] == "-" or s[j] == "#":
+        j += 1
+    return s[i:j], j
+
+
+def css_pair(s, i):
+    prop, i = css_value(s, i)
+    i = css_whitespace(s, i)
+    assert s[i] == ":"
+    i = css_whitespace(s, i + 1)
+    val, i = css_value(s, i)
+    print("value is ", val)
+    return (prop, val), i
+
+
+def css_whitespace(s, i):
+    doc_len = len(s)
+    while i < doc_len and s[i].isspace():
+        i += 1
+    return i
+
+
+# Takes in a string and an index to begin parsing
+# Iterates through the provided CSS string until it has parsed a single complete rule
+# Returns an object of key-value pairs representing the rules, and the index we left off at
+def css_body(s, i):
+    pairs = {}
+    assert s[i] == "{"
+    i = css_whitespace(s, i+1)
+    while True:
+        if s[i] == "}":
+            break
+        try:
+            (prop, val), i = css_pair(s, i)
+            pairs[prop] = val
+            i = css_whitespace(s, i)
+            assert s[i] == ";"
+            i = css_whitespace(s, i+1)
+        except AssertionError:
+            while s[i] not in [";", "}"]:
+                i += 1
+            if s[i] == ";":
+                i = css_whitespace(s, i + 1)
+    assert s[i] == "}"
+    return pairs, i+1
+
+
+def css_selector(s, i):
+    if s[i] == "#":
+        name, i = css_value(s, i + 1)
+        return IdSelector(name), i
+    elif s[i] == ".":
+        name, i = css_value(s, i + 1)
+        return ClassSelector(name), i
+    else:
+        name, i = css_value(s, i)
+        return TagSelector(name), i
+
+
+# Parses the entire CSS file and returns a list of selector: rule pairs
+def parse_css(doc):
+    i = 0
+    rule_pairs = []
+    while i < len(doc):
+        i = css_whitespace(doc, i)
+        if i >= len(doc):
+            break
+        selector, i = css_selector(doc, i)
+        i = css_whitespace(doc, i)
+        rules, i = css_body(doc, i)
+        rule_pairs.append([selector, rules])
+
+    return rule_pairs
+
+
+def apply_styles(node, rules):
+    if not isinstance(node, ElementNode):
+        return
+    # apply css styles
+    for selector, pairs in rules:
+        if selector.matches(node):
+            for prop in pairs:
+                node.style[prop] = pairs[prop]
+    # apply inline styles
+    for prop, value in node.compute_style().items():
+        node.style[prop] = value
+    for child in node.children:
+        apply_styles(child, rules)
+
+
+def get_browser_styles():
+    with open("default.css") as f:
+        browser_style = f.read()
+        browser_rules = parse_css(browser_style)
+        browser_rules.sort(key=lambda x: x[0].score())
+        return browser_rules
+
+
+def find_style_links(node, listee):
+    if not isinstance(node, ElementNode):
+        return
+    if node.tag == "link" and \
+            node.attributes.get("rel", "") == "stylesheet" and \
+            "href" in node.attributes:
+        listee.append(node.attributes["href"])
+    for child in node.children:
+        find_style_links(child, listee)
+    return listee
+
+
 # Networking Stuff
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
 # Reports an error if the argument does not start with http://
@@ -313,6 +513,20 @@ def parse(url):
     host, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "80")
     path, fragment = ("/" + path_fragment).rsplit("#", 1) if "#" in path_fragment else ("/" + path_fragment, None)
     return host, int(port), path, fragment
+
+
+def parse_relative_url(url, current):
+    if url.startswith("http://"):
+        return parse(url)
+
+    host, port, path, fragment = parse(current)
+    if url.startswith("/"):
+        path, fragment = url.split("#", 1) if "#" in url else (url, None)
+        return host, port, path, fragment
+    else:
+        path, fragment = url.split("#", 1) if "#" in url else (url, None)
+        curdir, curfile = current.rsplit("/", 1)
+        return host, port, curdir + "/" + path, fragment
 
 
 # Returns the header and body responses obtained from the provided host and path arguments.
@@ -355,8 +569,7 @@ def lex(source):
     return out
 
 
-# Node Stuff
-# Creates node tree for Text and Tags in HTML document.
+# Node Stuff Creates node tree for Text and Tags in HTML document.
 def populate_tree(tokens):
     current_node = None
     for tok in tokens:
@@ -402,7 +615,14 @@ def populate_tree(tokens):
 # Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
 def is_inline(node):
     return (isinstance(node, TextNode) and not node.text.isspace()) or \
-           (isinstance(node, ElementNode) and node.tag in ["b", "i", "li"])     # TODO: Assign2
+           (isinstance(node, ElementNode) and node.tag in ["b", "i"])
+
+
+# Assumes we always have a valid Npx string as an argument
+def strip_px(px):
+    pieces = px.split("px")
+    if len(pieces) > 0:
+        return int(pieces[0])
 
 
 # Renders the provided nodes. Binds scrolling keys.
@@ -442,6 +662,7 @@ def show(head_node):
     render()
     tkinter.mainloop()
 
+
 # Run Stuff
 # Gets the show on the road.
 def run(url):
@@ -449,10 +670,22 @@ def run(url):
     headers, body = request(host, port, path)
     text = lex(body)
     nodes = populate_tree(text)
+
+    browser_rules = get_browser_styles()
+    apply_styles(nodes, browser_rules)
+
+    user_rules = []
+    for link in find_style_links(nodes, []):
+        l_host, l_port, l_path, l_fragment = parse_relative_url(link, url)
+        header, body = request(l_host, l_port, l_path)
+        l_rules = parse_css(body)
+        user_rules.extend(l_rules)
+    user_rules.sort(key=lambda x: x[0].score())
+    apply_styles(nodes, user_rules)
+
     show(nodes)
 
 
 if __name__ == "__main__":
     import sys
-
     run(sys.argv[1])
