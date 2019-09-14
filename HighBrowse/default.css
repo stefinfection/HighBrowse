@@ -10,3 +10,4 @@ body { padding-top: 13px; padding-right: 13px; padding-bottom: 13px; padding-lef
 title { padding-top: 13px; padding-right: 13px; padding-bottom: 13px; padding-left: 13px }
 i { display: inline; font-style: italic; }
 b { display: inline; font-weight: bold; }
+a { color: blue }

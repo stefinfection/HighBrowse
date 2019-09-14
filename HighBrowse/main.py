@@ -296,7 +296,7 @@ class InlineLayout:
                 self.y += font.metrics("linespace") * 1.2
                 self.x = self.parent.content_left()
 
-            self.dl.append(DrawText(self.x, self.y, word, font))
+            self.dl.append(DrawText(self.x, self.y, word, node.style['color'], font))
 
             # update x to include word width AND a space if we're not at the end of the line
             self.x += w + (0 if i == len(words) - 1 else font.measure(" "))
@@ -339,10 +339,11 @@ class DrawText:
     x: int
     y: int
     text: str
+    color: str
     font: tkinter.font.Font
 
     def draw(self, scroll_y, canvas):
-        canvas.create_text(self.x, self.y - scroll_y, text=self.text, font=self.font, anchor='nw')
+        canvas.create_text(self.x, self.y - scroll_y, text=self.text, font=self.font, anchor='nw', color=self.color)
 
 
 @dataclass
@@ -486,11 +487,14 @@ def apply_styles(node, rules):
     for prop, value in node.compute_style().items():
         node.style[prop] = value
     # apply inherited styles
-    INHERITED_PROPS = ['font-style', 'font-weight']
+    INHERITED_PROPS = ['font-style', 'font-weight', 'color']
     for prop in INHERITED_PROPS:
         if prop not in node.style:
             if node.parent is None:
-                node.style[prop] = "normal"
+                if prop != 'color':
+                    node.style[prop] = 'normal'
+                else:
+                    node.style[prop] = 'black'
             else:
                 node.style[prop] = node.parent.style[prop]
     # recurse through children
@@ -634,6 +638,16 @@ def populate_tree(tokens):
     return current_node
 
 
+def find_element(x, y, layout):
+    for child in layout.children:
+        result = find_element(x, y, child)
+        if result:
+            return result
+    if layout.x <= x < layout.x + layout.w and \
+            layout.y <= y < layout.y + layout.get_height():
+        return layout.node
+
+
 # Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
 def is_inline(node):
     return (isinstance(node, TextNode) and not node.text.isspace()) or \
@@ -679,8 +693,14 @@ def show(head_node):
         scroll_y = max(scroll_y - SCROLL_STEP, 0)
         render()
 
+    def handle_click(e):
+        x, y = e.x, e.y + scroll_y
+        element = find_element(x, y, mode)
+        print(element.tag)
+
     window.bind("<Down>", scroll_down)
     window.bind("<Up>", scroll_up)
+    window.bind("<Button-1>", handle_click)
     render()
     tkinter.mainloop()
 
