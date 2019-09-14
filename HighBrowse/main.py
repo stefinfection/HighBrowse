@@ -42,7 +42,13 @@ class ElementNode:
 @dataclass
 class TextNode:
     text: str
-    parent: 'TextNode'
+    parent: 'TextNode'      # guaranteed to always have a parent
+    style: {} = None
+
+    def __post_init__(self):
+        self.style = {}
+        if self.parent.style is not None:
+            self.style = self.parent.style
 
 
 @dataclass
@@ -224,8 +230,8 @@ class InlineLayout:
     dl: List['DrawText' or 'DrawRect'] = field(default_factory=list)
     x: int = 0
     y: int = 0
-    bold_count: int = 0
-    italic_count: int = 0
+    is_bold: bool = False
+    is_italic: bool = False
     terminal_space: bool = True
 
     def __post_init__(self):
@@ -251,9 +257,9 @@ class InlineLayout:
     # Updates the styling and spacing state of this, according to the open tag node argument.
     def open(self, node):
         if node.tag == "i":
-            self.italic_count += 1
+            self.is_italic = True
         elif node.tag == "b":
-            self.bold_count += 1
+            self.is_bold = True
         elif node.tag == "br":
             self.x = self.parent.x
             self.y += self.get_font().metrics("linespace") * 1.2
@@ -265,14 +271,16 @@ class InlineLayout:
     # Updates the styling and spacing state of this, according to the closing tag node argument.
     def close(self, node):
         if node.tag == "i":
-            self.italic_count -= 1
+            self.is_italic = False
         elif node.tag == "b":
-            self.bold_count -= 1
+            self.is_bold = False
         elif node.tag == "li":
             self.x = self.parent.x
 
     # Lays out the provided text node within the x & y bounds of its parent.
     def text(self, node):
+        self.is_bold = node.style['font-weight'] == 'bold'
+        self.is_italic = node.style['font-style'] == 'italic'
         font = self.get_font()
 
         # account for entry space if present
@@ -315,7 +323,7 @@ class InlineLayout:
             (False, True): tkinter.font.Font(family="Times", size=16, slant="italic"),
             (True, True): tkinter.font.Font(family="Times", size=16, weight="bold", slant="italic"),
         }
-        return fonts[self.bold_count > 0, self.italic_count > 0]
+        return fonts[self.is_bold, self.is_italic]
 
 
 @dataclass
@@ -403,7 +411,6 @@ def css_pair(s, i):
     assert s[i] == ":"
     i = css_whitespace(s, i + 1)
     val, i = css_value(s, i)
-    print("value is ", val)
     return (prop, val), i
 
 
@@ -478,6 +485,15 @@ def apply_styles(node, rules):
     # apply inline styles
     for prop, value in node.compute_style().items():
         node.style[prop] = value
+    # apply inherited styles
+    INHERITED_PROPS = ['font-style', 'font-weight']
+    for prop in INHERITED_PROPS:
+        if prop not in node.style:
+            if node.parent is None:
+                node.style[prop] = "normal"
+            else:
+                node.style[prop] = node.parent.style[prop]
+    # recurse through children
     for child in node.children:
         apply_styles(child, rules)
 
@@ -550,21 +566,27 @@ def request(host, port, path):
 
 
 # Returns a list of Text and Tag objects according to the provided source argument.
+# Ignores comments.
 def lex(source):
     out = []
     text = ""
-    for c in source:
+    in_comment = False
+    for i in range(len(source)):
+        c = source[i]
         # just finished text piece, append to list & reset
         if c == "<":
             if text:
                 out.append(Text(text=text))
             text = ""
+            if source[i+1] == '!':
+                in_comment = True
         # just finished tag piece, append to list & reset
         elif c == ">":
             if text:
                 out.append(Tag(tag=text, isClose=text.startswith("/")))
             text = ""
-        else:
+            in_comment = False
+        elif not in_comment:
             text += c
     return out
 
@@ -615,7 +637,7 @@ def populate_tree(tokens):
 # Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
 def is_inline(node):
     return (isinstance(node, TextNode) and not node.text.isspace()) or \
-           (isinstance(node, ElementNode) and node.tag in ["b", "i"])
+           node.style.get("display", "block") == "inline"
 
 
 # Assumes we always have a valid Npx string as an argument
