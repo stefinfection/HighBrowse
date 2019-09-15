@@ -269,6 +269,10 @@ class TextLayout:
     def get_display_list(self):
         return [DrawText(self.x, self.y, self.text, self.color, self.font)]
 
+    @staticmethod
+    def get_height():
+        return 0
+
 # Represents a single line of text
 @dataclass
 class LineLayout:
@@ -301,6 +305,9 @@ class LineLayout:
         for child in self.children:
             dl.extend(child.get_display_list())
         return dl
+
+    def get_height(self):
+        return self.h
 
 
 @dataclass
@@ -338,10 +345,10 @@ class InlineLayout:
     # Lays out the argument node, and all of its descendants.
     def recurse(self, node):
         if isinstance(node, ElementNode):
-            # self.open(node)
+            self.open(node)
             for child in node.children:
                 self.recurse(child)
-            # self.close(node)
+            self.close(node)
         else:
             self.text(node)
 
@@ -471,6 +478,79 @@ class IdSelector:
         return 256
 
 
+@dataclass
+class Browser:
+    window: tkinter.Tk = None
+    canvas: tkinter.Canvas = None
+    page: Page = None
+    layout: BlockLayout = None
+    url: str = ''
+    scroll_y: int = 0
+    max_h: int = 0
+    nodes: ElementNode = None
+    rules: [] = None
+    display_list: [] = None
+
+    def __post_init__(self):
+        self.window = tkinter.Tk()
+        self.canvas = tkinter.Canvas(self.window, width=800, height=600)
+        self.canvas.pack()
+        self.window.bind("<Up>", self.scroll_up)
+        self.window.bind("<Down>", self.scroll_down)
+        self.window.bind("<Button-1>", self.handle_click)
+
+    def browse(self, url):
+        self.url = url
+        host, port, path, fragment = parse_url(url)
+        headers, body = request(host, port, path, fragment)
+        text = lex(body)
+        self.nodes = populate_tree(text)
+        self.rules = []
+        with open("default.css") as f:
+            r = parse_css(f.read())
+            self.rules.extend(r)
+        for link in find_style_links(self.nodes):
+            l_host, l_port, l_path, l_fragment = parse_url(relative_url(link, self.url))
+            header, body = request(l_host, l_port, l_path)
+            self.rules.extend(parse_css(body))
+        self.rules.sort(key=lambda x: x[0].score())
+        apply_styles(self.nodes, self.rules)
+        self.page = Page([])
+        self.layout = BlockLayout(self.page, self.nodes)
+        self.layout.layout()
+
+        self.max_h = self.layout.get_height()
+        self.display_list = self.layout.get_display_list()
+        self.render()
+
+    def scroll_down(self, e):
+        SCROLL_STEP = 100
+        page_padding = 13
+        window_height = 600
+        max_h = self.layout.get_height()
+        self.scroll_y = min(self.scroll_y + SCROLL_STEP, page_padding + max_h - window_height)
+        self.render()
+
+    def scroll_up(self, e):
+        SCROLL_STEP = 100
+        self.scroll_y = max(self.scroll_y - SCROLL_STEP, 0)
+        self.render()
+
+    def handle_click(self, e):
+        x, y = e.x, e.y + self.scroll_y
+        elt = find_element(x, y, self.layout)
+        while elt and not (isinstance(elt, ElementNode) and elt.tag == "a" and "href" in elt.attributes):
+            elt = elt.parent
+        if elt:
+            url = relative_url(elt.attributes["href"], self.url)
+            self.browse(url)
+
+    def render(self):
+        self.canvas.delete("all")
+        for cmd in self.display_list:
+            cmd.draw(self.scroll_y, self.canvas)
+
+
 # CSS parsing
 def css_value(s, i):
     j = i
@@ -582,7 +662,8 @@ def get_browser_styles():
         return browser_rules
 
 
-def find_style_links(node, listee):
+def find_style_links(node):
+    listee = []
     if not isinstance(node, ElementNode):
         return
     if node.tag == "link" and \
@@ -590,7 +671,7 @@ def find_style_links(node, listee):
             "href" in node.attributes:
         listee.append(node.attributes["href"])
     for child in node.children:
-        find_style_links(child, listee)
+        find_style_links(child)
     return listee
 
 
@@ -598,32 +679,45 @@ def find_style_links(node, listee):
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
 # Reports an error if the argument does not start with http://
 # Defaults to port 80 if none provided.
-def parse(url):
-    assert url.startswith("http://")
-    url = url[len("http://"):]
+def parse_url(url):
+    if url.startswith("http://"):
+        url = url[len("http://"):]
+    if url.startswith("https://"):
+        url = url[len("https://"):]
     host_port, path_fragment = url.split("/", 1) if "/" in url else (url, "")
     host, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "80")
     path, fragment = ("/" + path_fragment).rsplit("#", 1) if "#" in path_fragment else ("/" + path_fragment, None)
     return host, int(port), path, fragment
 
 
-def parse_relative_url(url, current):
-    if url.startswith("http://"):
-        return parse(url)
-
-    host, port, path, fragment = parse(current)
-    if url.startswith("/"):
-        path, fragment = url.split("#", 1) if "#" in url else (url, None)
-        return host, port, path, fragment
+# Turn a relative url into an absolute one
+def relative_url(url, current):
+    if url.startswith('\''):
+        url = strip_literals(url)
+    if url.startswith('http://') or url.startswith('https://'):
+        ret_url = url
+        return ret_url
+    elif url.startswith('/'):
+        ret_url = "/".join(current.split("/")[:3]) + url
+        return ret_url
+    # TODO: these fragment links with scrolling aren't working...
+    # elif url.startswith('#'):
+    #     ret_url = current + url
+    #     print("returning for # url: ", ret_url)
+    #     return ret_url
     else:
-        path, fragment = url.split("#", 1) if "#" in url else (url, None)
-        curdir, curfile = current.rsplit("/", 1)
-        return host, port, curdir + "/" + path, fragment
+        ret_url = current.rsplit("/", 1)[0] + "/" + url
+        return ret_url
+
+
+def strip_literals(string):
+    return string[1: (len(string) - 1)]
 
 
 # Returns the header and body responses obtained from the provided host and path arguments.
 # Reports an error if anything but a 200/OK status obtained from the host.
-def request(host, port, path):
+def request(host, port, path, fragment):
+    print(host, port, path)
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.connect((host, port))
     s.send("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host).encode("utf8"))
@@ -716,8 +810,9 @@ def find_element(x, y, layout):
         if result:
             return result
     if layout.x <= x < layout.x + layout.w and \
-            layout.y <= y < layout.y + layout.get_height() and layout.node:
-        return layout.node
+            layout.y <= y < layout.y + layout.get_height():
+        if hasattr(layout, 'node'):
+            return layout.node
 
 
 # Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
@@ -733,75 +828,11 @@ def strip_px(px):
         return int(pieces[0])
 
 
-# Renders the provided nodes. Binds scrolling keys.
-def show(head_node):
-    window = tkinter.Tk()
-    canvas = tkinter.Canvas(window, width=800, height=600)
-    canvas.pack()
-
-    SCROLL_STEP = 100
-    scroll_y = 0
-    page_padding = 13
-    window_height = 600
-
-    page = Page(children=[])
-    mode = BlockLayout(parent=page, node=head_node)
-    mode.layout()
-    max_h = mode.get_height()
-    display_list = mode.get_display_list()
-
-    def render():
-        canvas.delete("all")
-        for cmd in display_list:
-            cmd.draw(scroll_y, canvas)
-
-    def scroll_down(e):
-        nonlocal scroll_y
-        scroll_y = min(scroll_y + SCROLL_STEP, page_padding + max_h - window_height)
-        render()
-
-    def scroll_up(e):
-        nonlocal scroll_y
-        scroll_y = max(scroll_y - SCROLL_STEP, 0)
-        render()
-
-    def handle_click(e):
-        x, y = e.x, e.y + scroll_y
-        elt = find_element(x, y, mode)
-        while elt and not \
-                (isinstance(elt, ElementNode) and elt.tag == "a" and "href" in elt.attributes):
-            elt = elt.parent
-        if elt:
-            print(elt.attributes["href"])
-
-    window.bind("<Down>", scroll_down)
-    window.bind("<Up>", scroll_up)
-    window.bind("<Button-1>", handle_click)
-    render()
-    tkinter.mainloop()
-
-
 # Run Stuff
-# Gets the show on the road.
 def run(url):
-    host, port, path, fragment = parse(url)
-    headers, body = request(host, port, path)
-    text = lex(body)
-    nodes = populate_tree(text)
-
-    browser_rules = get_browser_styles()
-    apply_styles(nodes, browser_rules)
-
-    user_rules = []
-    for link in find_style_links(nodes, []):
-        l_host, l_port, l_path, l_fragment = parse_relative_url(link, url)
-        header, body = request(l_host, l_port, l_path)
-        l_rules = parse_css(body)
-        user_rules.extend(l_rules)
-    user_rules.sort(key=lambda x: x[0].score())
-    apply_styles(nodes, user_rules)
-
-    show(nodes)
+    browser = Browser()
+    browser.browse(sys.argv[1])
+    tkinter.mainloop()
 
 
 if __name__ == "__main__":
