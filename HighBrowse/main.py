@@ -120,8 +120,8 @@ class BlockLayout:
         assign5 = False
         y = self.y
         if any(is_inline(child) for child in self.node.children):
-            layout = InlineLayout(parent=self)
-            layout.layout(self.node)
+            layout = InlineLayout(parent=self, node=self.node)
+            layout.layout()
             y += layout.get_height()
             self.h = y - self.y
         else:
@@ -195,7 +195,7 @@ class BlockLayout:
                     DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.node.style.get("border-color", "black"),
                              self.node.style.get("background-color", "")))
             if self.node.style.get("background-color", "") != "":
-                dl.append(DrawRect(self.x, self.y, self.block_width(), self.block_height(), self.node.style.get("border-color", ""), self.node.style["background-color"]))
+                dl.append(DrawRect(self.x, self.y + self.mt, self.block_width(), self.block_height(), self.node.style.get("border-color", ""), self.node.style["background-color"]))
             dl.extend(child.get_display_list())
         return dl
 
@@ -221,18 +221,97 @@ class BlockLayout:
         return self.x + self.w
 
     def block_height(self):
-        return self.y + self.h
+        return self.y + self.h + self.pb + self.pt
+
+
+# Represents a single word
+@dataclass
+class TextLayout:
+    node: TextNode
+    text: str
+    parent: 'LineLayout' = None
+    children: List[bool] = field(default_factory=list)
+    x: int = 0
+    y: int = 0
+    w: int = 0
+    h: int = 0
+    color: str = 'black'
+    font: tkinter.font.Font = None
+    post_space_width: int = 0
+
+    def __post_init__(self):
+        is_bold = self.node.style['font-weight'] == 'bold'
+        is_italic = self.node.style['font-style'] == 'italic'
+        self.color = self.node.style['color']
+        self.font = tkinter.font.Font(
+            family="Times", size=16,
+            weight="bold" if is_bold else "normal",
+            slant="italic" if is_italic else "roman"
+        )
+        self.w = self.font.measure(self.text)
+        self.h = self.font.metrics('linespace')
+
+    def layout(self, x, y):
+        self.x = x
+        self.y = y
+
+    def attach(self, parent):
+        self.parent = parent
+        parent.children.append(self)
+        parent.w += self.w
+
+    def add_space(self):
+        if self.post_space_width == 0:
+            gap = self.font.measure(" ")
+            self.post_space_width = gap
+            self.parent.w += gap
+
+    def get_display_list(self):
+        return [DrawText(self.x, self.y, self.text, self.color, self.font)]
+
+# Represents a single line of text
+@dataclass
+class LineLayout:
+    parent: 'InlineLayout'
+    children: List['TextLayout'] = field(default_factory=list)
+    x: int = 0
+    y: int = 0
+    w: int = 0
+    h: int = 0
+
+    def __post_init__(self):
+        self.parent.children.append(self)
+
+    def layout(self, y):
+        self.y = y
+        self.x = self.parent.x
+
+        x = self.x
+        leading = 2
+        y += leading / 2
+        for child in self.children:
+            child.layout(x, y)
+            x += child.w + child.post_space_width
+            self.h = max(self.h, child.h + leading)
+        self.w = x - self.x
+
+    # Returns this display list.
+    def get_display_list(self):
+        dl = []
+        for child in self.children:
+            dl.extend(child.get_display_list())
+        return dl
 
 
 @dataclass
 class InlineLayout:
     parent: BlockLayout
-    dl: List['DrawText' or 'DrawRect'] = field(default_factory=list)
+    node: TextNode or ElementNode
+    children: List['LineLayout'] = field(default_factory=list)
     x: int = 0
     y: int = 0
-    is_bold: bool = False
-    is_italic: bool = False
-    terminal_space: bool = True
+    w: int = 0
+    h: int = 0
 
     def __post_init__(self):
         if type(self.parent) is not None:
@@ -243,77 +322,72 @@ class InlineLayout:
         elif type(self.parent) is Page:
             self.x = self.parent.x
             self.y = self.parent.y
+        LineLayout(self)
+
+    def layout(self):
+        self.x = self.parent.content_left()
+        self.y = self.parent.content_top()
+        self.w = self.parent.content_width()
+        self.recurse(self.node)
+        y = self.y
+        for child in self.children:
+            child.layout(y)
+            y += child.h
+        self.h = y - self.y
 
     # Lays out the argument node, and all of its descendants.
-    def layout(self, node):
+    def recurse(self, node):
         if isinstance(node, ElementNode):
-            self.open(node)
+            # self.open(node)
             for child in node.children:
-                self.layout(child)
-            self.close(node)
+                self.recurse(child)
+            # self.close(node)
         else:
             self.text(node)
 
     # Updates the styling and spacing state of this, according to the open tag node argument.
     def open(self, node):
-        if node.tag == "i":
-            self.is_italic = True
-        elif node.tag == "b":
-            self.is_bold = True
-        elif node.tag == "br":
+        if node.tag == "br":
             self.x = self.parent.x
             self.y += self.get_font().metrics("linespace") * 1.2
-        elif node.tag == "li" or node.show_bullet is True:
-            self.x = self.parent.x
-            self.dl.append(DrawRect(self.x, self.y + self.get_font().metrics("linespace") * 0.5 - 2, self.x + 4, self.y + self.get_font().metrics("linespace") * 0.5 + 2, "black", "black"))
-            self.x += self.get_font().measure("  ") + 4
+        # elif node.tag == "li" or node.show_bullet is True:
+        #     self.x = self.parent.x
+        #     self.dl.append(DrawRect(self.x, self.y + self.get_font().metrics("linespace") * 0.5 - 2, self.x + 4, self.y + self.get_font().metrics("linespace") * 0.5 + 2, "black", "black"))
+        #     self.x += self.get_font().measure("  ") + 4
 
     # Updates the styling and spacing state of this, according to the closing tag node argument.
     def close(self, node):
-        if node.tag == "i":
-            self.is_italic = False
-        elif node.tag == "b":
-            self.is_bold = False
-        elif node.tag == "li":
-            self.x = self.parent.x
+        pass
+        # if node.tag == "li":
+        #     self.x = self.parent.x
 
     # Lays out the provided text node within the x & y bounds of its parent.
     def text(self, node):
-        self.is_bold = node.style['font-weight'] == 'bold'
-        self.is_italic = node.style['font-style'] == 'italic'
-        font = self.get_font()
-
         # account for entry space if present
-        if node.text[0].isspace() and not self.terminal_space:
-            self.x += font.measure(" ")
+        if node.text[0].isspace() and len(self.children[-1].children) > 0:
+            self.children[-1].children[-1].add_space()
 
         # populate display list
         words = node.text.split()
         for i, word in enumerate(words):
-            w = font.measure(word)
-            # check if we need to line break
-            if self.x + w > self.parent.content_left() + self.parent.content_width():
-                self.y += font.metrics("linespace") * 1.2
-                self.x = self.parent.content_left()
-
-            self.dl.append(DrawText(self.x, self.y, word, node.style['color'], font))
-
-            # update x to include word width AND a space if we're not at the end of the line
-            self.x += w + (0 if i == len(words) - 1 else font.measure(" "))
-
-        # update x to include a whitespace if last char in line really is one
-        self.terminal_space = node.text[-1].isspace()
-        if self.terminal_space and words:
-            self.x += font.measure(" ")
+            tl = TextLayout(node, word)
+            line = self.children[-1]
+            if line.w + tl.w > self.w:
+                line = LineLayout(self)
+            tl.attach(line)
+            if i != len(words) - 1 or node.text[-1].isspace():
+                tl.add_space()
 
     # Returns the height of this.
     def get_height(self):
-        font = self.get_font()
-        return self.y + font.metrics("linespace") * 1.2 - self.parent.y
+        return self.h
 
     # Returns this display list.
     def get_display_list(self):
-        return self.dl
+        dl = []
+        for child in self.children:
+            dl.extend(child.get_display_list())
+        return dl
 
     # Returns the font based on the bold and italic class variables.
     def get_font(self):
@@ -323,7 +397,7 @@ class InlineLayout:
             (False, True): tkinter.font.Font(family="Times", size=16, slant="italic"),
             (True, True): tkinter.font.Font(family="Times", size=16, weight="bold", slant="italic"),
         }
-        return fonts[self.is_bold, self.is_italic]
+        return fonts[self.node.style['font-weight'] == 'bold', self.node.style['font-style'] == 'italic']
 
 
 @dataclass
@@ -343,7 +417,7 @@ class DrawText:
     font: tkinter.font.Font
 
     def draw(self, scroll_y, canvas):
-        canvas.create_text(self.x, self.y - scroll_y, text=self.text, font=self.font, anchor='nw', color=self.color)
+        canvas.create_text(self.x, self.y - scroll_y, text=self.text, font=self.font, anchor='nw', fill=self.color)
 
 
 @dataclass
@@ -377,7 +451,6 @@ class TagSelector:
 class ClassSelector:
     clazz: str
 
-    # TODO: this code doesn't make sense to me
     def matches(self, node):
         return self.clazz == node.attributes.get("class", "").split()
 
@@ -471,7 +544,6 @@ def parse_css(doc):
         i = css_whitespace(doc, i)
         rules, i = css_body(doc, i)
         rule_pairs.append([selector, rules])
-
     return rule_pairs
 
 
@@ -644,7 +716,7 @@ def find_element(x, y, layout):
         if result:
             return result
     if layout.x <= x < layout.x + layout.w and \
-            layout.y <= y < layout.y + layout.get_height():
+            layout.y <= y < layout.y + layout.get_height() and layout.node:
         return layout.node
 
 
@@ -695,8 +767,12 @@ def show(head_node):
 
     def handle_click(e):
         x, y = e.x, e.y + scroll_y
-        element = find_element(x, y, mode)
-        print(element.tag)
+        elt = find_element(x, y, mode)
+        while elt and not \
+                (isinstance(elt, ElementNode) and elt.tag == "a" and "href" in elt.attributes):
+            elt = elt.parent
+        if elt:
+            print(elt.attributes["href"])
 
     window.bind("<Down>", scroll_down)
     window.bind("<Up>", scroll_up)
