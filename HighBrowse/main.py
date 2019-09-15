@@ -484,6 +484,7 @@ class Browser:
     canvas: tkinter.Canvas = None
     page: Page = None
     layout: BlockLayout = None
+    history: [str] = None
     url: str = ''
     scroll_y: int = 0
     max_h: int = 0
@@ -498,8 +499,10 @@ class Browser:
         self.window.bind("<Up>", self.scroll_up)
         self.window.bind("<Down>", self.scroll_down)
         self.window.bind("<Button-1>", self.handle_click)
+        self.history = []
 
     def browse(self, url):
+        self.history.append(url)
         self.url = url
         host, port, path, fragment = parse_url(url)
         headers, body = request(host, port, path, fragment)
@@ -537,18 +540,33 @@ class Browser:
         self.render()
 
     def handle_click(self, e):
-        x, y = e.x, e.y + self.scroll_y
-        elt = find_element(x, y, self.layout)
-        while elt and not (isinstance(elt, ElementNode) and elt.tag == "a" and "href" in elt.attributes):
-            elt = elt.parent
-        if elt:
-            url = relative_url(elt.attributes["href"], self.url)
-            self.browse(url)
+        if e.y < 60:  # Browser chrome
+            if 10 <= e.x < 35 and 10 <= e.y < 50:
+                self.go_back()
+        else:
+            x, y = e.x, e.y + self.scroll_y - 60
+            elt = find_element(x, y, self.layout)
+            while elt and not (isinstance(elt, ElementNode) and elt.tag == "a" and "href" in elt.attributes):
+                elt = elt.parent
+            if elt:
+                url = relative_url(elt.attributes["href"], self.url)
+                self.browse(url)
 
     def render(self):
         self.canvas.delete("all")
         for cmd in self.display_list:
-            cmd.draw(self.scroll_y, self.canvas)
+            cmd.draw(self.scroll_y - 60, self.canvas)
+        self.canvas.create_rectangle(0, 0, 800, 60, fill='white')
+        self.canvas.create_rectangle(10, 10, 35, 50)
+        self.canvas.create_polygon(15, 30, 30, 15, 30, 45, fill='black')
+        self.canvas.create_rectangle(40, 10, 790, 50)
+        self.canvas.create_text(45, 15, anchor='nw', text=self.url)
+
+    def go_back(self):
+        if len(self.history) > 1:
+            self.history.pop()
+            back = self.history.pop()
+            self.browse(back)
 
 
 # CSS parsing
@@ -717,7 +735,6 @@ def strip_literals(string):
 # Returns the header and body responses obtained from the provided host and path arguments.
 # Reports an error if anything but a 200/OK status obtained from the host.
 def request(host, port, path, fragment):
-    print(host, port, path)
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.connect((host, port))
     s.send("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host).encode("utf8"))
