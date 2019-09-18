@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="d6ddd4fa-9498-46a6-b03d-50b8ac71e88a" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/default.css" beforeDir="false" afterPath="$PROJECT_DIR$/default.css" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -15,8 +15,8 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="Python Script" />
         <option value="CSS File" />
+        <option value="Python Script" />
       </list>
     </option>
   </component>
@@ -94,7 +94,7 @@
       <workItem from="1567885468040" duration="66238000" />
       <workItem from="1568212747393" duration="12610000" />
       <workItem from="1568486861185" duration="21782000" />
-      <workItem from="1568667906388" duration="10416000" />
+      <workItem from="1568667906388" duration="13841000" />
     </task>
     <servers />
   </component>

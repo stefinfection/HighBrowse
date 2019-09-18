@@ -401,7 +401,7 @@ class InlineLayout:
 
     # Lays out the argument node, and all of its descendants.
     def recurse(self, node):
-        if isinstance(node, ElementNode) and node.tag in ['input', 'textarea']:
+        if isinstance(node, ElementNode) and node.tag in ['input', 'textarea', 'button']:
             self.input(node)
         elif isinstance(node, ElementNode):
             for child in node.children:
@@ -558,7 +558,10 @@ class Browser:
             self.history.append(url)
             self.url = url
             host, port, path, fragment = parse_url(url)
-            headers, body = request(host, port, path, fragment)
+            headers, body = request('GET', host, port, path)
+        self.parse(body)
+
+    def parse(self, body):
         text = lex(body)
         self.nodes = populate_tree(text)
         self.rules = []
@@ -567,7 +570,7 @@ class Browser:
             self.rules.extend(r)
         for link in find_style_links(self.nodes):
             l_host, l_port, l_path, l_fragment = parse_url(relative_url(link, self.url))
-            header, body = request(l_host, l_port, l_path)
+            header, body = request('GET', l_host, l_port, l_path)
             self.rules.extend(parse_css(body))
         self.rules.sort(key=lambda x: x[0].score())
         self.re_layout()
@@ -579,7 +582,6 @@ class Browser:
         self.layout.layout()
         self.max_h = self.layout.get_height()
         self.display_list = self.layout.get_display_list()
-        print(self.display_list)
         self.render()
 
     def scroll_down(self, e):
@@ -603,13 +605,15 @@ class Browser:
             x, y = e.x, e.y + self.scroll_y - 60
             elt = find_element(x, y, self.layout)
             while elt and not (isinstance(elt, ElementNode) and
-                               (elt.tag == "a" and "href" in elt.attributes or elt.tag in ['input', 'textarea'])):
+                               (elt.tag == "a" and "href" in elt.attributes or elt.tag in ['input', 'textarea', 'button'])):
                 elt = elt.parent
             if not elt:
                 pass
             elif elt == 'a':
                 url = relative_url(elt.attributes["href"], self.url)
                 self.browse(url, False)
+            elif elt == 'button':
+                self.submit_form(elt)
             else:
                 self.edit_input(elt)
 
@@ -620,6 +624,33 @@ class Browser:
         else:
             element.children = [TextNode(new_text, element)]
         self.re_layout()
+
+    def submit_form(self, element):
+        # find form containing the button we clicked
+        while element and element.tag != 'form':
+            element = element.parent
+        if not element:
+            return
+        # compose dictionary of all form inputs
+        inputs = find_inputs(element, [])
+        params = {}
+        for curr_input in inputs:
+            if curr_input.tag == 'input':
+                params[curr_input.attributes['id']] = curr_input.attributes.get('value', '')
+            else:
+                params[curr_input.attributes['id']] = curr_input.children[0].text if curr_input.children else ''
+            self.post(relative_url(element.attributes['action'], self.history[-1]), params)
+
+    def post(self, url, params):
+        body = ''
+        for param, value in params.items():
+            body += '&' + param + '='
+            body += value.replace(' ', '%20')
+        body = body[1:]
+        host, port, path, fragment = parse_url(url)
+        headers, body = request('POST', host, port, path, body)
+        self.history.append(url)
+        self.parse(body)
 
     def render(self):
         self.canvas.delete("all")
@@ -762,6 +793,16 @@ def find_style_links(node):
     return listee
 
 
+def find_inputs(element, out):
+    if not isinstance(element, ElementNode):
+        return
+    if element.tag == 'input' or element.tag == 'textarea' and 'name' in element.attributes:
+        out.append(element)
+    for child in element.children:
+        find_inputs(child, out)
+    return out
+
+
 # Networking Stuff
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
 # Reports an error if the argument does not start with http://
@@ -787,11 +828,6 @@ def relative_url(url, current):
     elif url.startswith('/'):
         ret_url = "/".join(current.split("/")[:3]) + url
         return ret_url
-    # TODO: these fragment links with scrolling aren't working...
-    # elif url.startswith('#'):
-    #     ret_url = current + url
-    #     print("returning for # url: ", ret_url)
-    #     return ret_url
     else:
         ret_url = current.rsplit("/", 1)[0] + "/" + url
         return ret_url
@@ -803,10 +839,18 @@ def strip_literals(string):
 
 # Returns the header and body responses obtained from the provided host and path arguments.
 # Reports an error if anything but a 200/OK status obtained from the host.
-def request(host, port, path, fragment):
+def request(method, host, port, path, body=None):
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.connect((host, port))
-    s.send("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host).encode("utf8"))
+    # s.send("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host).encode("utf8"))
+    s.send("{} {} HTTP/1.0\r\nHost: {}\r\n".format(method, path, host).encode("utf8"))
+    if body:
+        body = body.encode('utf8')
+        s.send("Content-Length: {}\r\n\r\n".format(len(body)).encode("utf8"))
+        s.send(body)
+    else:
+        s.send("\r\n".encode('utf8'))
+
     response = s.makefile("rb").read().decode("utf8")
     s.close()
 
