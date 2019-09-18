@@ -11,3 +11,5 @@ title { padding-top: 13px; padding-right: 13px; padding-bottom: 13px; padding-le
 i { display: inline; font-style: italic; }
 b { display: inline; font-weight: bold; }
 a { color: blue }
+input { display: inline; }
+textarea { display: inline; font-style: normal; font-weight: normal; }

@@ -224,6 +224,65 @@ class BlockLayout:
         return self.y + self.h + self.pb + self.pt
 
 
+@dataclass
+class InputLayout:
+    node: TextNode or ElementNode
+    multiline: bool = False
+    parent: 'LineLayout' = None
+    post_space_width: int = 0
+    children: List['InlineLayout'] = field(default_factory=list)
+    x: int = 0
+    y: int = 0
+    w: int = 0
+    h: int = 0
+
+    def __post_init__(self):
+        self.w = 200
+        self.h = 60 if self.multiline else 20
+
+    def layout(self, x, y):
+        self.x = x
+        self.y = y
+        for child in self.node.children:
+            layout = InlineLayout(self, child)
+            layout.layout()
+
+    def attach(self, parent):
+        self.parent = parent
+        parent.children.append(self)
+        parent.w += self.w
+
+    def add_space(self):
+        if self.post_space_width == 0:
+            gap = 5
+            self.post_space_width = gap
+            self.parent += gap
+
+    def get_display_list(self):
+        border = DrawRect(self.x, self.y, self.x + self.w, self.y + self.h, outline='', background='')
+        if self.children:
+            dl = [border]
+            for child in self.children:
+                dl.extend(child.get_display_list())
+            return dl
+        else:
+            font = tkinter.font.Font(family='Times', size=16)
+            text = DrawText(self.x+1, self.y+1, (self.node.attributes.get('value', '')), 'black', font)
+            return [border, text]
+
+    def get_height(self):
+        return self.h
+
+    def content_left(self):
+        return self.x + 1
+
+    def content_top(self):
+        return self.y + 1
+
+    def content_width(self):
+        return self.w - 2
+
+
 # Represents a single word
 @dataclass
 class TextLayout:
@@ -277,7 +336,7 @@ class TextLayout:
 @dataclass
 class LineLayout:
     parent: 'InlineLayout'
-    children: List['TextLayout'] = field(default_factory=list)
+    children: List['TextLayout' or 'InputLayout'] = field(default_factory=list)
     x: int = 0
     y: int = 0
     w: int = 0
@@ -312,7 +371,7 @@ class LineLayout:
 
 @dataclass
 class InlineLayout:
-    parent: BlockLayout
+    parent: BlockLayout or InputLayout
     node: TextNode or ElementNode
     children: List['LineLayout'] = field(default_factory=list)
     x: int = 0
@@ -326,14 +385,12 @@ class InlineLayout:
         if type(self.parent) is BlockLayout:
             self.x = self.parent.content_left()
             self.y = self.parent.content_top() + self.parent.h
-        elif type(self.parent) is Page:
+        elif type(self.parent) is Page or type(self.parent) is InputLayout:
             self.x = self.parent.x
             self.y = self.parent.y
         LineLayout(self)
 
     def layout(self):
-        self.x = self.parent.content_left()
-        self.y = self.parent.content_top()
         self.w = self.parent.content_width()
         self.recurse(self.node)
         y = self.y
@@ -344,29 +401,20 @@ class InlineLayout:
 
     # Lays out the argument node, and all of its descendants.
     def recurse(self, node):
-        if isinstance(node, ElementNode):
-            self.open(node)
+        if isinstance(node, ElementNode) and node.tag in ['input', 'textarea']:
+            self.input(node)
+        elif isinstance(node, ElementNode):
             for child in node.children:
                 self.recurse(child)
-            self.close(node)
         else:
             self.text(node)
 
-    # Updates the styling and spacing state of this, according to the open tag node argument.
-    def open(self, node):
-        if node.tag == "br":
-            self.x = self.parent.x
-            self.y += self.get_font().metrics("linespace") * 1.2
-        # elif node.tag == "li" or node.show_bullet is True:
-        #     self.x = self.parent.x
-        #     self.dl.append(DrawRect(self.x, self.y + self.get_font().metrics("linespace") * 0.5 - 2, self.x + 4, self.y + self.get_font().metrics("linespace") * 0.5 + 2, "black", "black"))
-        #     self.x += self.get_font().measure("  ") + 4
-
-    # Updates the styling and spacing state of this, according to the closing tag node argument.
-    def close(self, node):
-        pass
-        # if node.tag == "li":
-        #     self.x = self.parent.x
+    def input(self, node):
+        tl = InputLayout(node, multiline=(node.tag == 'textarea'))
+        line = self.children[-1]
+        if line.w + tl.w > self.w:
+            line = LineLayout(self)
+        tl.attach(line)
 
     # Lays out the provided text node within the x & y bounds of its parent.
     def text(self, node):
@@ -439,7 +487,7 @@ class DrawRect:
     def draw(self, scroll_y, canvas):
         if self.background != "":
             canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill=self.outline)
-        canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y, width=0, fill=self.outline)
+        canvas.create_rectangle(self.x1, self.y1 - scroll_y, self.x2, self.y2 - scroll_y)
 
 
 @dataclass(frozen=True)
@@ -501,11 +549,16 @@ class Browser:
         self.window.bind("<Button-1>", self.handle_click)
         self.history = []
 
-    def browse(self, url):
-        self.history.append(url)
-        self.url = url
-        host, port, path, fragment = parse_url(url)
-        headers, body = request(host, port, path, fragment)
+    def browse(self, init_input, is_html):
+        body = None
+        if is_html:
+            body = init_input
+        else:
+            url = init_input
+            self.history.append(url)
+            self.url = url
+            host, port, path, fragment = parse_url(url)
+            headers, body = request(host, port, path, fragment)
         text = lex(body)
         self.nodes = populate_tree(text)
         self.rules = []
@@ -517,13 +570,16 @@ class Browser:
             header, body = request(l_host, l_port, l_path)
             self.rules.extend(parse_css(body))
         self.rules.sort(key=lambda x: x[0].score())
+        self.re_layout()
+
+    def re_layout(self):
         apply_styles(self.nodes, self.rules)
         self.page = Page([])
         self.layout = BlockLayout(self.page, self.nodes)
         self.layout.layout()
-
         self.max_h = self.layout.get_height()
         self.display_list = self.layout.get_display_list()
+        print(self.display_list)
         self.render()
 
     def scroll_down(self, e):
@@ -546,11 +602,24 @@ class Browser:
         else:
             x, y = e.x, e.y + self.scroll_y - 60
             elt = find_element(x, y, self.layout)
-            while elt and not (isinstance(elt, ElementNode) and elt.tag == "a" and "href" in elt.attributes):
+            while elt and not (isinstance(elt, ElementNode) and
+                               (elt.tag == "a" and "href" in elt.attributes or elt.tag in ['input', 'textarea'])):
                 elt = elt.parent
-            if elt:
+            if not elt:
+                pass
+            elif elt == 'a':
                 url = relative_url(elt.attributes["href"], self.url)
-                self.browse(url)
+                self.browse(url, False)
+            else:
+                self.edit_input(elt)
+
+    def edit_input(self, element):
+        new_text = input('Enter new text: ')
+        if element.tag == 'input':
+            element.attributes['value'] = new_text
+        else:
+            element.children = [TextNode(new_text, element)]
+        self.re_layout()
 
     def render(self):
         self.canvas.delete("all")
@@ -566,7 +635,7 @@ class Browser:
         if len(self.history) > 1:
             self.history.pop()
             back = self.history.pop()
-            self.browse(back)
+            self.browse(back, False)
 
 
 # CSS parsing
@@ -803,7 +872,7 @@ def populate_tree(tokens):
                     current_node.children.append(child)
 
                 # Shift our current node if we're not looking at a self-closing tag
-                if child.tag not in ["br", "link", "meta"]:
+                if child.tag not in ["br", "link", "meta", "input"]:
                     current_node = child
             else:
                 tag = tok.tag[1:]  # strip off closing tag /
@@ -832,7 +901,7 @@ def find_element(x, y, layout):
             return layout.node
 
 
-# Returns true if node argument is TextNode or ElementNode and a bold or italic tag.
+# Returns true if display style is set to inline
 def is_inline(node):
     return (isinstance(node, TextNode) and not node.text.isspace()) or \
            node.style.get("display", "block") == "inline"
@@ -846,12 +915,15 @@ def strip_px(px):
 
 
 # Run Stuff
-def run(url):
+def run():
     browser = Browser()
-    browser.browse(sys.argv[1])
+    if str(sys.argv[1]).startswith('http'):
+        browser.browse(sys.argv[1], False)
+    else:
+        browser.browse(sys.argv[1], True)
     tkinter.mainloop()
 
 
 if __name__ == "__main__":
     import sys
-    run(sys.argv[1])
+    run()
