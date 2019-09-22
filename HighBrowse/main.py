@@ -1,10 +1,10 @@
 import socket
 import tkinter
 import tkinter.font
+import dukpy
 from dataclasses import dataclass
 from dataclasses import field
 from typing import List
-
 
 @dataclass
 class Text:
@@ -25,6 +25,7 @@ class ElementNode:
     attributes: {}
     style: {} = None
     show_bullet: bool = False
+    handle: int = 0
 
     def __post_init__(self):
         self.style = self.compute_style()
@@ -47,8 +48,6 @@ class TextNode:
 
     def __post_init__(self):
         self.style = {}
-        if self.parent.style is not None:
-            self.style = self.parent.style
 
 
 @dataclass
@@ -119,12 +118,12 @@ class BlockLayout:
     def layout(self):
         assign5 = False
         y = self.y
-        if any(is_inline(child) for child in self.node.children):
+        if self.node is not None and any(is_inline(child) for child in self.node.children):
             layout = InlineLayout(parent=self, node=self.node)
             layout.layout()
             y += layout.get_height()
             self.h = y - self.y
-        else:
+        elif self.node is not None:
             # check to see if first child top margin overlaps with this top margin
             # if so, adjust the y coordinate of first child
             i = 0
@@ -507,7 +506,11 @@ class ClassSelector:
     clazz: str
 
     def matches(self, node):
-        return self.clazz == node.attributes.get("class", "").split()
+        clazz_match = node.attributes.get("class", "").split()
+        if len(clazz_match) > 0:
+            return self.clazz == clazz_match
+        else:
+            return False
 
     @staticmethod
     def score():
@@ -519,7 +522,11 @@ class IdSelector:
     id: str
 
     def matches(self, node):
-        return self.id == node.attributes.get("id", "").split()
+        id_match = node.attributes.get("id", "").split()
+        if len(id_match) > 0:
+            return self.id == id_match[0]
+        else:
+            return False
 
     @staticmethod
     def score():
@@ -539,6 +546,8 @@ class Browser:
     nodes: ElementNode = None
     rules: [] = None
     display_list: [] = None
+    js: dukpy.JSInterpreter = None
+    js_handles: {} = None
 
     def __post_init__(self):
         self.window = tkinter.Tk()
@@ -548,6 +557,14 @@ class Browser:
         self.window.bind("<Down>", self.scroll_down)
         self.window.bind("<Button-1>", self.handle_click)
         self.history = []
+        self.js = dukpy.JSInterpreter()
+        self.js_handles = {}
+        self.js.export_function("log", print)
+        self.js.export_function("querySelectorAll", self.js_querySelectorAll)
+        self.js.export_function("getAttribute", self.js_getAttribute)
+        self.js.export_function("innerHTML", self.js_innerHTML)
+        with open("runtime.js") as f:
+            self.js.evaljs(f.read())
 
     def browse(self, init_input, is_html):
         body = None
@@ -559,21 +576,38 @@ class Browser:
             self.url = url
             host, port, path, fragment = parse_url(url)
             headers, body = request('GET', host, port, path)
-        self.parse(body)
+        self.parse(body, False)
 
-    def parse(self, body):
+    def parse(self, body, inner_mode):
+        print('botdy to parse: ', body)
         text = lex(body)
-        self.nodes = populate_tree(text)
-        self.rules = []
-        with open("default.css") as f:
-            r = parse_css(f.read())
-            self.rules.extend(r)
-        for link in find_style_links(self.nodes):
-            l_host, l_port, l_path, l_fragment = parse_url(relative_url(link, self.url))
-            header, body = request('GET', l_host, l_port, l_path)
-            self.rules.extend(parse_css(body))
-        self.rules.sort(key=lambda x: x[0].score())
-        self.re_layout()
+        nodes = populate_tree(text)
+        if inner_mode:
+            return nodes
+        else:
+            self.nodes = nodes
+            self.rules = []
+            with open("default.css") as f:
+                r = parse_css(f.read())
+                self.rules.extend(r)
+            links = find_style_links(self.nodes)
+            if links is not None and len(links) > 0:
+                for link in links:
+                    l_host, l_port, l_path, l_fragment = parse_url(relative_url(link, self.url))
+                    header, body = request('GET', l_host, l_port, l_path)
+                    self.rules.extend(parse_css(body))
+            self.rules.sort(key=lambda x: x[0].score())
+            scripts = find_scripts(self.nodes, [])
+            if scripts is not None and len(scripts) > 0:
+                lastSite = '127.0.0.1'
+                if len(self.history) > 0:
+                    lastSite = self.history[-1]
+                for script in scripts:
+                    l_host, l_port, l_path, l_fragment = \
+                        parse_url(relative_url(script, lastSite))
+                    header, body = request('GET', l_host, l_port, l_path)
+                    self.js.evaljs(body)
+            self.re_layout()
 
     def re_layout(self):
         apply_styles(self.nodes, self.rules)
@@ -607,22 +641,26 @@ class Browser:
             while elt and not (isinstance(elt, ElementNode) and
                                (elt.tag == "a" and "href" in elt.attributes or elt.tag in ['input', 'textarea', 'button'])):
                 elt = elt.parent
+            if elt:
+                self.event("click", elt)
             if not elt:
                 pass
-            elif elt == 'a':
+            elif elt.tag == 'a':
                 url = relative_url(elt.attributes["href"], self.url)
                 self.browse(url, False)
-            elif elt == 'button':
+            elif elt.tag == 'button':
                 self.submit_form(elt)
             else:
                 self.edit_input(elt)
 
     def edit_input(self, element):
         new_text = input('Enter new text: ')
+        print('Input received...')
         if element.tag == 'input':
-            element.attributes['value'] = new_text
+            element.attributes["value"] = new_text
         else:
             element.children = [TextNode(new_text, element)]
+        self.event("change", element)
         self.re_layout()
 
     def submit_form(self, element):
@@ -631,15 +669,16 @@ class Browser:
             element = element.parent
         if not element:
             return
+        self.event("submit", element)
         # compose dictionary of all form inputs
         inputs = find_inputs(element, [])
         params = {}
         for curr_input in inputs:
             if curr_input.tag == 'input':
-                params[curr_input.attributes['id']] = curr_input.attributes.get('value', '')
+                params[curr_input.attributes["id"]] = curr_input.attributes.get("value", "")
             else:
-                params[curr_input.attributes['id']] = curr_input.children[0].text if curr_input.children else ''
-            self.post(relative_url(element.attributes['action'], self.history[-1]), params)
+                params[curr_input.attributes["id"]] = curr_input.children[0].text if curr_input.children else ""
+        self.post(relative_url(element.attributes["action"], self.history[-1]), params)
 
     def post(self, url, params):
         body = ''
@@ -650,7 +689,7 @@ class Browser:
         host, port, path, fragment = parse_url(url)
         headers, body = request('POST', host, port, path, body)
         self.history.append(url)
-        self.parse(body)
+        self.parse(body, False)
 
     def render(self):
         self.canvas.delete("all")
@@ -667,6 +706,52 @@ class Browser:
             self.history.pop()
             back = self.history.pop()
             self.browse(back, False)
+
+    # JS Support
+    def js_querySelectorAll(self, sel):
+        selector, _ = css_selector(sel + "{", 0)
+        elts = find_selected(self.nodes, selector, [])
+        out = []
+        for elt in elts:
+            if elt.handle == 0:
+                handle = len(self.js_handles) + 1
+                elt.handle = handle
+                self.js_handles[handle] = elt
+                out.append(handle)
+            else:
+                out.append(elt.handle)
+        return out
+
+    def js_getAttribute(self, handle, attr):
+        elt = self.js_handles[handle]
+        return elt.attributes.get(attr, None)
+
+    def js_innerHTML(self, handle, s):
+        elt = self.js_handles[handle]
+        new_html = "<newnode>{}</newnode>".format(s)
+        new_node = self.parse(new_html, True)
+        print('element and new node: ', elt, '\n\\', new_node)
+        elt.children = new_node.children
+        for child in elt.children:
+            child.parent = elt
+        self.re_layout()
+
+    def event(self, eType, elt):
+        if hasattr(elt, 'handle'):
+            eval_string = "__runHandlers({}, \"{}\")".format(elt.handle, eType)
+            self.js.evaljs(eval_string)
+        else:
+            print('Event has no handler', eType)
+
+
+def find_selected(node, sel, out):
+    if not isinstance(node, ElementNode):
+        return
+    if sel.matches(node):
+        out.append(node)
+    for child in node.children:
+        find_selected(child, sel, out)
+    return out
 
 
 # CSS parsing
@@ -747,6 +832,7 @@ def parse_css(doc):
 
 def apply_styles(node, rules):
     if not isinstance(node, ElementNode):
+        node.style = node.parent.style
         return
     # apply css styles
     for selector, pairs in rules:
@@ -803,6 +889,16 @@ def find_inputs(element, out):
     return out
 
 
+def find_scripts(node, out):
+    if not isinstance(node, ElementNode): return
+    if node.tag == "script" and \
+       "src" in node.attributes:
+        out.append(node.attributes["src"])
+    for child in node.children:
+        find_scripts(child, out)
+    return out
+
+
 # Networking Stuff
 # Parses the host, port, path, and fragment components of the provided url, if they exist.
 # Reports an error if the argument does not start with http://
@@ -841,8 +937,8 @@ def strip_literals(string):
 # Reports an error if anything but a 200/OK status obtained from the host.
 def request(method, host, port, path, body=None):
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    print("host and port:", host, port)
     s.connect((host, port))
-    # s.send("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host).encode("utf8"))
     s.send("{} {} HTTP/1.0\r\nHost: {}\r\n".format(method, path, host).encode("utf8"))
     if body:
         body = body.encode('utf8')
@@ -893,6 +989,7 @@ def lex(source):
 
 # Node Stuff Creates node tree for Text and Tags in HTML document.
 def populate_tree(tokens):
+    print('tokens to tree: ', tokens)
     current_node = None
     for tok in tokens:
         if isinstance(tok, Text):
@@ -961,9 +1058,10 @@ def strip_px(px):
 # Run Stuff
 def run():
     browser = Browser()
-    if str(sys.argv[1]).startswith('http'):
+    if str(sys.argv[1]).startswith('http') or str(sys.argv[1]).startswith('127') or str(sys.argv[1]).startswith('local'):
         browser.browse(sys.argv[1], False)
     else:
+        print("not a site, treating as raw html...")
         browser.browse(sys.argv[1], True)
     tkinter.mainloop()
 

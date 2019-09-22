@@ -1,9 +1,8 @@
-import socket
 
 
 def start_server():
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
-    s.bind(('', 8000))
+    s.bind(('127.0.0.1', 8000))
     s.listen()
     while True:
         conx, addr = s.accept()
@@ -36,6 +35,9 @@ def handle_connection(conx):
 
 
 def handle_request(method, url, headers, body):
+    if url == "/comment.js":
+        with open("comment.js") as f:
+            return f.read()
     ENTRIES = ['Steph was here', 'Oink was here']
     if method == 'POST':
         params = {}
@@ -45,8 +47,15 @@ def handle_request(method, url, headers, body):
         if 'guest' in params:
             ENTRIES.append(params['guest'])
     out = "<!doctype html><body>"
-    out += "<form action=add method=post><p><input name=guest></p><p><button>Sign the book!</button></p></form>"
+    out += "<form action=add method=post><p><input name=guest></p><p id=errors></p><p><button>Sign the book!</button></p></form>"
+    out += "<script src=/comment.js></script>"
     for entry in ENTRIES:
         out += "<p>" + entry + "</p>"
     out += "</body>"
     return out
+
+
+if __name__ == "__main__":
+    import socket
+    print('Server running on 8000...')
+    start_server()
