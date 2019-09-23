@@ -14,3 +14,4 @@ a { color: blue }
 input { display: inline; }
 textarea { display: inline; font-style: normal; font-weight: normal; }
 #errors { font-weight: bold; color: red; }
+:hover { border-bottom: 1px; }

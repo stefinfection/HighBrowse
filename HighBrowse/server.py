@@ -1,5 +1,6 @@
 ENTRIES = ['Steph was here', 'Oink was here']
 
+
 def start_server():
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.bind(('127.0.0.1', 8000))
@@ -35,18 +36,15 @@ def handle_connection(conx):
 
 
 def handle_request(method, url, headers, body):
-    print('handling request for body: ', body)
     if url == "/comment.js":
         with open("comment.js") as f:
             return f.read()
     if method == 'POST':
         params = {}
-        print('body is: ', body)
         for field in body.split("&"):
             name, value = field.split("=", 1)
             params[name] = value.replace("%20", " ")
         if 'guest' in params and len(params['guest']) <= 100:
-            print('appending this to list: ', params['guest'])
             ENTRIES.append(params['guest'])
     out = "<!doctype html><body>"
     out += "<form action=add method=post><p><input id=guest></p><p id=errors></p><p><button>Sign the book!</button></p></form>"

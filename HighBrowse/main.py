@@ -2,6 +2,7 @@ import socket
 import tkinter
 import tkinter.font
 import dukpy
+import time
 from dataclasses import dataclass
 from dataclasses import field
 from typing import List
@@ -26,9 +27,11 @@ class ElementNode:
     style: {} = None
     show_bullet: bool = False
     handle: int = 0
+    pseudoClasses: set = None
 
     def __post_init__(self):
         self.style = self.compute_style()
+        self.pseudoClasses = set()
 
     def compute_style(self):
         style = {}
@@ -177,6 +180,7 @@ class BlockLayout:
         return self.h
 
     def get_display_list(self):
+        # TODO: pretty sure there is something weird with my borders...
         dl = []
         for child in self.children:
             if self.bl > 0:
@@ -533,6 +537,21 @@ class IdSelector:
         return 256
 
 
+@dataclass(frozen=True)
+class PseudoclassSelector:
+    clazz: str
+
+    def matches(self, node):
+        is_match = self.clazz in node.pseudoClasses
+        if is_match:
+            print('found a match')
+        return is_match
+
+    @staticmethod
+    def score():
+        return 0
+
+
 @dataclass
 class Browser:
     window: tkinter.Tk = None
@@ -548,6 +567,8 @@ class Browser:
     display_list: [] = None
     js: dukpy.JSInterpreter = None
     js_handles: {} = None
+    timer: 'Timer' = None
+    hovered_elt: ElementNode = None
 
     def __post_init__(self):
         self.window = tkinter.Tk()
@@ -556,7 +577,9 @@ class Browser:
         self.window.bind("<Up>", self.scroll_up)
         self.window.bind("<Down>", self.scroll_down)
         self.window.bind("<Button-1>", self.handle_click)
+        self.window.bind("<Motion>", self.handle_hover)
         self.history = []
+        self.timer = Timer()
         self.js = dukpy.JSInterpreter()
         self.js_handles = {}
         self.js.export_function("log", print)
@@ -567,6 +590,7 @@ class Browser:
             self.js.evaljs(f.read())
 
     def browse(self, init_input, is_html):
+        self.timer.start('Downloading')
         body = None
         if is_html:
             body = init_input
@@ -576,43 +600,57 @@ class Browser:
             self.url = url
             host, port, path, fragment = parse_url(url)
             headers, body = request('GET', host, port, path)
+            self.timer.stop()
         self.parse(body, False)
 
     def parse(self, body, inner_mode):
+        self.timer.start('Parse HTML')
         text = lex(body)
         nodes = populate_tree(text)
+        self.nodes = nodes
+        self.rules = []
+        self.timer.stop()
+        self.timer.start('Parse CSS')
+        with open("default.css") as f:
+            r = parse_css(f.read())
+            self.rules.extend(r)
+        links = find_style_links(self.nodes)
+        if links is not None and len(links) > 0:
+            for link in links:
+                l_host, l_port, l_path, l_fragment = parse_url(relative_url(link, self.url))
+                header, body = request('GET', l_host, l_port, l_path)
+                self.rules.extend(parse_css(body))
+        self.rules.sort(key=lambda x: x[0].score())
+        self.timer.stop()
+        self.timer.start("Run JS")
+        scripts = find_scripts(self.nodes, [])
+        if scripts is not None and len(scripts) > 0:
+            for script in scripts:
+                l_host, l_port, l_path, l_fragment = \
+                    parse_url(relative_url(script, self.url))
+                header, body = request('GET', l_host, l_port, l_path)
+                self.js.evaljs(body)
+        self.timer.stop()
+        self.re_layout()
         if inner_mode:
             return nodes
-        else:
-            self.nodes = nodes
-            self.rules = []
-            with open("default.css") as f:
-                r = parse_css(f.read())
-                self.rules.extend(r)
-            links = find_style_links(self.nodes)
-            if links is not None and len(links) > 0:
-                for link in links:
-                    l_host, l_port, l_path, l_fragment = parse_url(relative_url(link, self.url))
-                    header, body = request('GET', l_host, l_port, l_path)
-                    self.rules.extend(parse_css(body))
-            self.rules.sort(key=lambda x: x[0].score())
-            scripts = find_scripts(self.nodes, [])
-            if scripts is not None and len(scripts) > 0:
-                for script in scripts:
-                    l_host, l_port, l_path, l_fragment = \
-                        parse_url(relative_url(script, self.url))
-                    header, body = request('GET', l_host, l_port, l_path)
-                    self.js.evaljs(body)
-            self.re_layout()
 
     def re_layout(self):
+        self.timer.start('Style')
         apply_styles(self.nodes, self.rules)
+        self.timer.stop()
+        self.timer.start('Layout')
         self.page = Page([])
         self.layout = BlockLayout(self.page, self.nodes)
         self.layout.layout()
+        self.timer.stop()
         self.max_h = self.layout.get_height()
+        self.timer.start('Display List')
         self.display_list = self.layout.get_display_list()
+        self.timer.stop()
+        self.timer.start('Rendering')
         self.render()
+        self.timer.stop()
 
     def scroll_down(self, e):
         SCROLL_STEP = 100
@@ -645,6 +683,26 @@ class Browser:
                     self.submit_form(elt)
                 else:
                     self.edit_input(elt)
+
+    def handle_hover(self, e):
+        print('\n\n\n\n\n\n\n')
+        # Remove any previous hovering
+        if self.hovered_elt:
+            self.hovered_elt.pseudoClasses.remove("hover")
+        self.hovered_elt = None
+
+        # Find nearest box layout parent
+        x, y = e.x, e.y - 60 + self.scroll_y
+        elt = find_element(x, y, self.layout)
+        while elt and not isinstance(elt, ElementNode):
+            elt = elt.parent
+
+        # If we found our new element, add class
+        if elt:
+            elt.pseudoClasses.add("hover")
+            self.hovered_elt = elt
+
+        self.re_layout()
 
     def edit_input(self, element):
         new_text = input('Enter new text: ')
@@ -745,6 +803,22 @@ class Browser:
             return cancelled
 
 
+@dataclass
+class Timer:
+    phase: str = None
+    time: float = None
+
+    def start(self, name):
+        if self.phase:
+            self.stop()
+        self.phase = name
+        self.time = time.time()
+
+    def stop(self):
+        # print("[{:>10.6f}] {}".format(time.time() - self.time, self.phase))
+        self.phase = None
+
+
 def find_selected(node, sel, out):
     if not isinstance(node, ElementNode):
         return
@@ -811,6 +885,9 @@ def css_selector(s, i):
     elif s[i] == ".":
         name, i = css_value(s, i + 1)
         return ClassSelector(name), i
+    elif s[i] == ":":
+        name, i = css_value(s, i + 1)
+        return PseudoclassSelector(name), i
     else:
         name, i = css_value(s, i)
         return TagSelector(name), i
@@ -858,13 +935,13 @@ def apply_styles(node, rules):
     for child in node.children:
         apply_styles(child, rules)
 
-
-def get_browser_styles():
-    with open("default.css") as f:
-        browser_style = f.read()
-        browser_rules = parse_css(browser_style)
-        browser_rules.sort(key=lambda x: x[0].score())
-        return browser_rules
+# TODO: erase, depreciated...
+# def get_browser_styles():
+#     with open("default.css") as f:
+#         browser_style = f.read()
+#         browser_rules = parse_css(browser_style)
+#         browser_rules.sort(key=lambda x: x[0].score())
+#         return browser_rules
 
 
 def find_style_links(node):
@@ -937,7 +1014,6 @@ def strip_literals(string):
 # Returns the header and body responses obtained from the provided host and path arguments.
 # Reports an error if anything but a 200/OK status obtained from the host.
 def request(method, host, port, path, body=None):
-    print('about to make {} request with body: {}'.format(method, body))
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.connect((host, port))
     s.send("{} {} HTTP/1.0\r\nHost: {}\r\n".format(method, path, host).encode("utf8"))
