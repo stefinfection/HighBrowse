@@ -579,7 +579,6 @@ class Browser:
         self.parse(body, False)
 
     def parse(self, body, inner_mode):
-        print('botdy to parse: ', body)
         text = lex(body)
         nodes = populate_tree(text)
         if inner_mode:
@@ -599,12 +598,9 @@ class Browser:
             self.rules.sort(key=lambda x: x[0].score())
             scripts = find_scripts(self.nodes, [])
             if scripts is not None and len(scripts) > 0:
-                lastSite = '127.0.0.1'
-                if len(self.history) > 0:
-                    lastSite = self.history[-1]
                 for script in scripts:
                     l_host, l_port, l_path, l_fragment = \
-                        parse_url(relative_url(script, lastSite))
+                        parse_url(relative_url(script, self.url))
                     header, body = request('GET', l_host, l_port, l_path)
                     self.js.evaljs(body)
             self.re_layout()
@@ -641,21 +637,17 @@ class Browser:
             while elt and not (isinstance(elt, ElementNode) and
                                (elt.tag == "a" and "href" in elt.attributes or elt.tag in ['input', 'textarea', 'button'])):
                 elt = elt.parent
-            if elt:
-                self.event("click", elt)
-            if not elt:
-                pass
-            elif elt.tag == 'a':
-                url = relative_url(elt.attributes["href"], self.url)
-                self.browse(url, False)
-            elif elt.tag == 'button':
-                self.submit_form(elt)
-            else:
-                self.edit_input(elt)
+            if elt and not self.event('click', elt):
+                if elt.tag == 'a':
+                    url = relative_url(elt.attributes["href"], self.url)
+                    self.browse(url, False)
+                elif elt.tag == 'button':
+                    self.submit_form(elt)
+                else:
+                    self.edit_input(elt)
 
     def edit_input(self, element):
         new_text = input('Enter new text: ')
-        print('Input received...')
         if element.tag == 'input':
             element.attributes["value"] = new_text
         else:
@@ -667,18 +659,25 @@ class Browser:
         # find form containing the button we clicked
         while element and element.tag != 'form':
             element = element.parent
-        if not element:
-            return
-        self.event("submit", element)
-        # compose dictionary of all form inputs
-        inputs = find_inputs(element, [])
-        params = {}
-        for curr_input in inputs:
-            if curr_input.tag == 'input':
-                params[curr_input.attributes["id"]] = curr_input.attributes.get("value", "")
-            else:
-                params[curr_input.attributes["id"]] = curr_input.children[0].text if curr_input.children else ""
-        self.post(relative_url(element.attributes["action"], self.history[-1]), params)
+        if element and not self.event("submit", element):
+            # compose dictionary of all form inputs
+            inputs = find_inputs(element, [])
+            params = {}
+            num_inputs = 0
+            for curr_input in inputs:
+                if curr_input.tag == 'input':
+                    id_param = curr_input.attributes.get("id", "")
+                    if id_param == "":
+                        id_param = 'input_{}'.format(num_inputs)
+                        num_inputs += 1
+                    params[id_param] = curr_input.attributes.get("value", "")
+                else:
+                    id_param = curr_input.attributes.get("id", "")
+                    if id_param == "":
+                        id_param = 'input_{}'.format(num_inputs)
+                        num_inputs += 1
+                    params[id_param] = curr_input.children[0].text if curr_input.children else ""
+            self.post(relative_url(element.attributes["action"], self.history[-1]), params)
 
     def post(self, url, params):
         body = ''
@@ -730,18 +729,20 @@ class Browser:
         elt = self.js_handles[handle]
         new_html = "<newnode>{}</newnode>".format(s)
         new_node = self.parse(new_html, True)
-        print('element and new node: ', elt, '\n\\', new_node)
         elt.children = new_node.children
         for child in elt.children:
             child.parent = elt
         self.re_layout()
 
     def event(self, eType, elt):
+        cancelled = False
         if hasattr(elt, 'handle'):
             eval_string = "__runHandlers({}, \"{}\")".format(elt.handle, eType)
-            self.js.evaljs(eval_string)
+            cancelled = self.js.evaljs(eval_string)
+            return cancelled
         else:
             print('Event has no handler', eType)
+            return cancelled
 
 
 def find_selected(node, sel, out):
@@ -936,8 +937,8 @@ def strip_literals(string):
 # Returns the header and body responses obtained from the provided host and path arguments.
 # Reports an error if anything but a 200/OK status obtained from the host.
 def request(method, host, port, path, body=None):
+    print('about to make {} request with body: {}'.format(method, body))
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
-    print("host and port:", host, port)
     s.connect((host, port))
     s.send("{} {} HTTP/1.0\r\nHost: {}\r\n".format(method, path, host).encode("utf8"))
     if body:
@@ -989,7 +990,6 @@ def lex(source):
 
 # Node Stuff Creates node tree for Text and Tags in HTML document.
 def populate_tree(tokens):
-    print('tokens to tree: ', tokens)
     current_node = None
     for tok in tokens:
         if isinstance(tok, Text):

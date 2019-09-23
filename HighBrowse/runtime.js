@@ -33,9 +33,11 @@ function __runHandlers(handle, type) {
     if (!dict[type])
         dict[type] = [];
     var list = dict[type];
+    var evt = new Event();
     for (var i = 0; i < list.length; i++) {
         list[i]();
     }
+    return evt.cancelled;
 }
 
 Object.defineProperty(Node.prototype, 'innerHTML', {
