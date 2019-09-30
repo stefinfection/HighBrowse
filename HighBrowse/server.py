@@ -1,5 +1,6 @@
 ENTRIES = [ ("Mess with the best, die like the rest", "crashoverride"), ("HACK THE PLANET!!!", "nameless") ]
 LOGINS = { "crash": "0cool", "nameless": "cerealkiller" }
+TOKENS = {}
 
 
 def start_server():
@@ -39,8 +40,6 @@ def handle_connection(conx):
 
 
 def handle_request(method, url, headers, body):
-    print('request input url:', url)
-
     # Return js
     if url == "/comment.js":
         with open("comment.js") as f:
@@ -59,7 +58,7 @@ def handle_request(method, url, headers, body):
     # See if we already have a username in cookies
     username = None
     if "cookie" in headers:
-        username = parse_cookies(headers["cookie"]).get("username")
+        username = TOKENS.get(headers["cookie"])
     out = "<!doctype html><body>"
 
     if method == 'POST':
@@ -72,10 +71,11 @@ def handle_request(method, url, headers, body):
                 out += '<p class=errors>Could not add entry - must be logged in first!</p>'
         # logging in to site
         elif url == '/':
-            print('params to server: ', params)
             if check_login(params.get("username"), params.get("password")):
                 username = params.get("username")
-                headers["Set-Cookie"] = "username=" + username
+                token = str(random.random())[2:]
+                TOKENS[token] = username
+                headers["set-cookie"] = "token=" + token
                 out += "<p class=success>Logged in as {}</p>".format(username)
             else:
                 out += "<p class=errors>Login failed!</p>".format(username)
@@ -83,7 +83,6 @@ def handle_request(method, url, headers, body):
     # Always show who has signed book
     out += "<form action=add method=post><p id=input_p><input id=guest></p><p id=errors></p><p id=button_p><button>Sign the book!</button></p></form>"
     out += "<script src=/comment.js></script>"
-    print('entries: ', ENTRIES)
     for entry, who in ENTRIES:
         out += "<p id={}_p>".format(entry) + entry + " <i>from " + who + "</i></p>"
 
@@ -91,6 +90,7 @@ def handle_request(method, url, headers, body):
         out += "<p><a href=/login>Log in to add to the guest list</a></p>"
 
     out += "</body>"
+    print("about to return headers from server: ", headers)
     return headers, out
 
 
@@ -116,5 +116,6 @@ def form_decode(body):
 
 if __name__ == "__main__":
     import socket
+    import random
     print('Server running on 8000...')
     start_server()

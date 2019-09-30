@@ -599,17 +599,26 @@ class Browser:
             self.history.append(url)
             self.url = url
             host, port, path, fragment = parse_url(url)
+            # req_headers = {}
+            # if len(self.jar.items()) > 0:
+            #     cookie_string = ""
+            #     for key, value in self.jar.items():
+            #         cookie_string += "&" + key + "=" + value
+            #     req_headers = {"Cookie": cookie_string[1:]}
             req_headers = {}
-            if len(self.jar.items()) > 0:
-                cookie_string = ""
-                for key, value in self.jar.items():
-                    cookie_string += "&" + key + "=" + value
-                req_headers = {"Cookie": cookie_string[1:]}
+            cookies = self.jar.get((host, port), {})
+            if len(cookies) > 0:
+                req_headers = {"cookie": cookies}
             headers, body = request('GET', host, port, path, headers=req_headers)
+            # if "set-cookie" in headers:
+            #     kv, params = headers["set-cookie"].split(";")
+            #     key, value = kv.split("=", 1)
+            #     self.jar[key] = value
             if "set-cookie" in headers:
-                kv, params = headers["set-cookie"].split(";")
+                kv = headers["set-cookie"]
                 key, value = kv.split("=", 1)
-                self.jar[key] = value
+                origin = (host, port)
+                self.jar[origin] = value
             self.timer.stop()
         self.parse(body, False)
 
@@ -759,19 +768,29 @@ class Browser:
         body = body[1:]
         host, port, path, fragment = parse_url(url)
 
+        # req_headers = {}
+        # if len(self.jar.items()) > 0:
+        #     cookie_string = ""
+        #     for key, value in self.jar.items():
+        #         cookie_string += "&" + key + "=" + value
+        #     req_headers = {"Cookie": cookie_string[1:]}
         req_headers = {}
-        if len(self.jar.items()) > 0:
-            cookie_string = ""
-            for key, value in self.jar.items():
-                cookie_string += "&" + key + "=" + value
-            req_headers = {"Cookie": cookie_string[1:]}
+        print('jar contents: ', self.jar)
+        cookies = self.jar.get((host, port), {})
+        if len(cookies) > 0:
+            req_headers = {"cookie": cookies}
         headers, body = request('POST', host, port, path, req_headers, body)
         self.history.append(url)
+        # if "set-cookie" in headers:
+        #     kv = headers["set-cookie"]
+        #     key, value = kv.split("=", 1)
+        #     self.jar[key] = value
+        print('about to set cookie back from post: ', headers)
         if "set-cookie" in headers:
-            print('headers back from post: ', headers)
             kv = headers["set-cookie"]
             key, value = kv.split("=", 1)
-            self.jar[key] = value
+            origin = (host, port)
+            self.jar[origin] = value
         self.parse(body, False)
 
     def render(self):
