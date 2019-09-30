@@ -2,9 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="d6ddd4fa-9498-46a6-b03d-50b8ac71e88a" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/comment.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/runtime.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/server.py" afterDir="false" />
@@ -19,8 +16,8 @@
     <option name="RECENT_TEMPLATES">
       <list>
         <option value="CSS File" />
-        <option value="Python Script" />
         <option value="JavaScript File" />
+        <option value="Python Script" />
       </list>
     </option>
   </component>
@@ -98,7 +95,10 @@
       <workItem from="1567885468040" duration="66238000" />
       <workItem from="1568212747393" duration="12610000" />
       <workItem from="1568486861185" duration="21782000" />
-      <workItem from="1568667906388" duration="51173000" />
+      <workItem from="1568667906388" duration="58166000" />
+      <workItem from="1569342709574" duration="317000" />
+      <workItem from="1569360120493" duration="16726000" />
+      <workItem from="1569791767527" duration="11589000" />
     </task>
     <servers />
   </component>

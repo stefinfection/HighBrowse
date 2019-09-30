@@ -105,7 +105,6 @@ class BlockLayout:
                 self.node.show_bullet = True
         elif type(self.parent) is Page and self.w == 0:
             self.w = self.parent.w
-
         if isinstance(self.node, ElementNode):
             if self.node.tag == "div" and "id" in self.node.attributes \
                     and self.node.attributes["id"] == "content":
@@ -180,7 +179,6 @@ class BlockLayout:
         return self.h
 
     def get_display_list(self):
-        # TODO: pretty sure there is something weird with my borders...
         dl = []
         for child in self.children:
             if self.bl > 0:
@@ -194,6 +192,8 @@ class BlockLayout:
                 dl.append(DrawRect(self.x, self.y, self.x + self.w, self.y + self.bt, self.node.style.get("border-color", "black"),
                                    self.node.style.get("background-color", "")))
             if self.bb > 0:
+                print('Applying a border to {} because parent {} has border \n\n'.format(child.node.attributes.get('id', 'NO_ID'), self.node.attributes.get('id', 'NO_ID')))
+                # FIXME parent id is same as child id...
                 dl.append(
                     DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.node.style.get("border-color", "black"),
                              self.node.style.get("background-color", "")))
@@ -543,8 +543,6 @@ class PseudoclassSelector:
 
     def matches(self, node):
         is_match = self.clazz in node.pseudoClasses
-        if is_match:
-            print('found a match')
         return is_match
 
     @staticmethod
@@ -569,6 +567,7 @@ class Browser:
     js_handles: {} = None
     timer: 'Timer' = None
     hovered_elt: ElementNode = None
+    jar: {} = None
 
     def __post_init__(self):
         self.window = tkinter.Tk()
@@ -582,6 +581,7 @@ class Browser:
         self.timer = Timer()
         self.js = dukpy.JSInterpreter()
         self.js_handles = {}
+        self.jar = {}
         self.js.export_function("log", print)
         self.js.export_function("querySelectorAll", self.js_querySelectorAll)
         self.js.export_function("getAttribute", self.js_getAttribute)
@@ -599,7 +599,17 @@ class Browser:
             self.history.append(url)
             self.url = url
             host, port, path, fragment = parse_url(url)
-            headers, body = request('GET', host, port, path)
+            req_headers = {}
+            if len(self.jar.items()) > 0:
+                cookie_string = ""
+                for key, value in self.jar.items():
+                    cookie_string += "&" + key + "=" + value
+                req_headers = {"Cookie": cookie_string[1:]}
+            headers, body = request('GET', host, port, path, headers=req_headers)
+            if "set-cookie" in headers:
+                kv, params = headers["set-cookie"].split(";")
+                key, value = kv.split("=", 1)
+                self.jar[key] = value
             self.timer.stop()
         self.parse(body, False)
 
@@ -624,6 +634,7 @@ class Browser:
         self.timer.stop()
         self.timer.start("Run JS")
         scripts = find_scripts(self.nodes, [])
+        print(scripts)
         if scripts is not None and len(scripts) > 0:
             for script in scripts:
                 l_host, l_port, l_path, l_fragment = \
@@ -640,6 +651,7 @@ class Browser:
         apply_styles(self.nodes, self.rules)
         self.timer.stop()
         self.timer.start('Layout')
+        self.page = None
         self.page = Page([])
         self.layout = BlockLayout(self.page, self.nodes)
         self.layout.layout()
@@ -685,24 +697,26 @@ class Browser:
                     self.edit_input(elt)
 
     def handle_hover(self, e):
-        print('\n\n\n\n\n\n\n')
-        # Remove any previous hovering
-        if self.hovered_elt:
-            self.hovered_elt.pseudoClasses.remove("hover")
-        self.hovered_elt = None
-
-        # Find nearest box layout parent
-        x, y = e.x, e.y - 60 + self.scroll_y
-        elt = find_element(x, y, self.layout)
-        while elt and not isinstance(elt, ElementNode):
-            elt = elt.parent
-
-        # If we found our new element, add class
-        if elt:
-            elt.pseudoClasses.add("hover")
-            self.hovered_elt = elt
-
-        self.re_layout()
+        pass
+        # # Remove any previous hovering
+        # print('HOVER CALL')
+        # if self.hovered_elt:
+        #     print('Removing hover from element: ', self.hovered_elt.attributes['id'])
+        #     self.hovered_elt.pseudoClasses.remove("hover")
+        # self.hovered_elt = None
+        #
+        # # Find nearest box layout parent
+        # x, y = e.x, e.y - 60 + self.scroll_y
+        # elt = find_element(x, y, self.layout)
+        # while elt and not isinstance(elt, ElementNode):
+        #     elt = elt.parent
+        #
+        # # If we found our new element, add class
+        # if elt and elt.tag != 'body':
+        #     elt.pseudoClasses.add("hover")
+        #     self.hovered_elt = elt
+        #
+        # self.re_layout()
 
     def edit_input(self, element):
         new_text = input('Enter new text: ')
@@ -744,8 +758,20 @@ class Browser:
             body += value.replace(' ', '%20')
         body = body[1:]
         host, port, path, fragment = parse_url(url)
-        headers, body = request('POST', host, port, path, body)
+
+        req_headers = {}
+        if len(self.jar.items()) > 0:
+            cookie_string = ""
+            for key, value in self.jar.items():
+                cookie_string += "&" + key + "=" + value
+            req_headers = {"Cookie": cookie_string[1:]}
+        headers, body = request('POST', host, port, path, req_headers, body)
         self.history.append(url)
+        if "set-cookie" in headers:
+            print('headers back from post: ', headers)
+            kv = headers["set-cookie"]
+            key, value = kv.split("=", 1)
+            self.jar[key] = value
         self.parse(body, False)
 
     def render(self):
@@ -917,6 +943,8 @@ def apply_styles(node, rules):
         if selector.matches(node):
             for prop in pairs:
                 node.style[prop] = pairs[prop]
+                if isinstance(selector, PseudoclassSelector):
+                    print('Applying hover style to node: ', node.attributes['id'])
     # apply inline styles
     for prop, value in node.compute_style().items():
         node.style[prop] = value
@@ -1000,8 +1028,15 @@ def relative_url(url, current):
         ret_url = url
         return ret_url
     elif url.startswith('/'):
-        ret_url = "/".join(current.split("/")[:3]) + url
-        return ret_url
+        slash_split = current.split('/')
+        if len(slash_split) > 1:
+            base = slash_split[0]
+            print('update relative url: ', base + url)
+            return base + url
+        else:
+            ret_url = "/".join(current.split("/")[:3]) + url
+            print('relative url: ', ret_url)
+            return ret_url
     else:
         ret_url = current.rsplit("/", 1)[0] + "/" + url
         return ret_url
@@ -1013,10 +1048,12 @@ def strip_literals(string):
 
 # Returns the header and body responses obtained from the provided host and path arguments.
 # Reports an error if anything but a 200/OK status obtained from the host.
-def request(method, host, port, path, body=None):
+def request(method, host, port, path, headers={}, body=None):
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.connect((host, port))
     s.send("{} {} HTTP/1.0\r\nHost: {}\r\n".format(method, path, host).encode("utf8"))
+    for header, value in headers.items():
+        s.send("{}: {}\r\n".format(header, value).encode("utf8"))
     if body:
         body = body.encode('utf8')
         s.send("Content-Length: {}\r\n\r\n".format(len(body)).encode("utf8"))
