@@ -586,6 +586,7 @@ class Browser:
         self.js.export_function("querySelectorAll", self.js_querySelectorAll)
         self.js.export_function("getAttribute", self.js_getAttribute)
         self.js.export_function("innerHTML", self.js_innerHTML)
+        self.js.export_function("cookie", self.js_cookie)
         with open("runtime.js") as f:
             self.js.evaljs(f.read())
 
@@ -836,6 +837,15 @@ class Browser:
         for child in elt.children:
             child.parent = elt
         self.re_layout()
+
+    def js_cookie(self):
+        host, port, path, fragment = parse_url(self.history[-1])
+        cookies = self.jar.get((host, port), {})
+
+        cookie_string = ""
+        for key, value in cookies.items():
+            cookie_string += "&" + key + "=" + value
+        return cookie_string[1:]
 
     def event(self, eType, elt):
         cancelled = False

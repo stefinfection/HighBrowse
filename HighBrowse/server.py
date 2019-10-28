@@ -1,6 +1,7 @@
 ENTRIES = [ ("Mess with the best, die like the rest", "crashoverride"), ("HACK THE PLANET!!!", "nameless") ]
 LOGINS = { "crash": "0cool", "nameless": "cerealkiller" }
 TOKENS = {}
+NONCES = {}
 
 
 def start_server():
@@ -61,11 +62,16 @@ def handle_request(method, url, headers, body):
         username = TOKENS.get(headers["cookie"])
     out = "<!doctype html><body>"
 
+    # Add nonce
+    nonce = str(random.random())[2:]
+    out += "<input name=nonce type=hidden value=" + nonce + ">"
+
     if method == 'POST':
         params = form_decode(body)
         # posting a new guest book entry
         if url == '/add':
-            if 'guest' in params and len(params['guest']) <= 100 and username:
+            if 'guest' in params and len(params['guest']) <= 100 and username \
+                    and 'nonce' in params and params['nonce'] == NONCES[username]:
                 ENTRIES.append((params['guest'], username))
             else:
                 out += '<p class=errors>Could not add entry - must be logged in first!</p>'
@@ -75,6 +81,7 @@ def handle_request(method, url, headers, body):
                 username = params.get("username")
                 token = str(random.random())[2:]
                 TOKENS[token] = username
+                NONCES[username] = nonce
                 headers["set-cookie"] = "token=" + token
                 out += "<p class=success>Logged in as {}</p>".format(username)
             else:
@@ -84,6 +91,7 @@ def handle_request(method, url, headers, body):
     out += "<form action=add method=post><p id=input_p><input id=guest></p><p id=errors></p><p id=button_p><button>Sign the book!</button></p></form>"
     out += "<script src=/comment.js></script>"
     for entry, who in ENTRIES:
+        entry = entry.replace("&", "&amp;").replace("<", "&lt;").replace("\"", "&quot;")
         out += "<p id={}_p>".format(entry) + entry + " <i>from " + who + "</i></p>"
 
     if username is None:
