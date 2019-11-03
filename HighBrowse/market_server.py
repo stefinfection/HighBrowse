@@ -62,6 +62,7 @@ def handle_request(method, url, headers, body, curr_cart):
         body += "</form>"
         return {}, body
 
+    # TODO: actually route to this?
     # Get history
     if url == "/history":
         body = "<!doctype html>"
@@ -73,21 +74,21 @@ def handle_request(method, url, headers, body, curr_cart):
     if url == '/checkout':
         subtotal = get_total(curr_cart)
         tax = get_tax(curr_cart)
-        body = "<!doctype html>"
+        body = "<!doctype html><html>"
         body += "<body>"
         body += "<form action=/confirm method=post>"
         body += "<p>Sub-Total: " + format_price(subtotal) + "</p>"
         body += "<p>Tax: " + format_price(tax) + "</p>"
         body += "<p>Total: " + format_price(subtotal + tax) + "</p>"
-        body += "<p First Name:<input id=first_name>></input></p>"
-        body += "<p Last Name:<input id=last_name>></input></p>"
-        body += "<p Address:<input id=address>></input></p>"
-        body += "<p Credit Card:<input id=credit_card>></input></p>"
-        body += "<p Expiration Date(mm/yy):<input id=exp_date>></input></p>"
-        body += "<p CVV:<input id=cvv>></input></p>"
+        body += "<p>First Name: <input id=first_name></p>"
+        body += "<p>Last Name: <input id=last_name></p>"
+        body += "<p>Address: <input id=address></p>"
+        body += "<p>Credit Card: <input id=credit_card></p>"
+        body += "<p>Expiration Date(mm/yy): <input id=exp_date></p>"
+        body += "<p>CVV: <input id=cvv></p>"
         body += "<p><button>Complete Purchase</button></p>"
-        body += "<p><a href=/></a></p>"
-        body += "</form></body>"
+        body += "<p><a href=/>Back To Shop</a></p>"
+        body += "</form></body></html>"
         return {}, body
 
     # Init forms that may change from GET vs POST
@@ -105,6 +106,8 @@ def handle_request(method, url, headers, body, curr_cart):
             out += "<p><a href=/>Logout</a></p>"
         else:
             out += "<p><a href=/login>Login</a></p>"
+        out += "<p><a href=/cart>Cart</a></p>"
+        out += "<p><a href=/history>Order History</a></p>"
         out += "<form action=/cart method=post>"
         for item in SHOP:
             out += "<div>"

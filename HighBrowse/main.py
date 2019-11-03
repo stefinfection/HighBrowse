@@ -686,10 +686,6 @@ class Browser:
         self.scroll_y = max(self.scroll_y - SCROLL_STEP, 0)
         self.render()
 
-    def format_params(self, attributes, out):
-        print(attributes)
-        return attributes
-
     def handle_click(self, e):
         if e.y < 60:  # Browser chrome
             if 10 <= e.x < 35 and 10 <= e.y < 50:
@@ -705,8 +701,7 @@ class Browser:
                     url = relative_url(elt.attributes["href"], self.url)
                     self.browse(url, False)
                 elif elt.tag == 'button':
-                    elt_atts = self.format_params(elt.attributes, [])
-                    self.submit_form(elt, elt_atts)
+                    self.submit_form(elt, elt.attributes)
                 else:
                     self.edit_input(elt)
 
@@ -742,14 +737,18 @@ class Browser:
         self.re_layout()
 
     def submit_form(self, element, elm_level_params):
+        print('submitting form...')
+        print('element is: ', element)
         # find form containing the button we clicked
         while element and element.tag != 'form':
             element = element.parent
+            print('next element up: ', element.tag)
         if element and not self.event("submit", element):
             params = {}
             # if we have element level params, add those (use case: button has id attribute)
-            for key in elm_level_params:
-                params[key] = elm_level_params[key]
+            if elm_level_params is not None and len(elm_level_params) > 0:
+                for key in elm_level_params:
+                    params[key] = elm_level_params[key]
 
             # compose dictionary of all form inputs
             inputs = find_inputs(element, [])
@@ -770,6 +769,7 @@ class Browser:
             self.post(relative_url(element.attributes["action"], self.history[-1]), params)
 
     def post(self, url, params):
+        print('posting...')
         body = ''
         for param, value in params.items():
             body += '&' + param + '='
@@ -777,22 +777,13 @@ class Browser:
         body = body[1:]
         host, port, path, fragment = parse_url(url)
 
-        # req_headers = {}
-        # if len(self.jar.items()) > 0:
-        #     cookie_string = ""
-        #     for key, value in self.jar.items():
-        #         cookie_string += "&" + key + "=" + value
-        #     req_headers = {"Cookie": cookie_string[1:]}
         req_headers = {}
         cookies = self.jar.get((host, port), {})
         if len(cookies) > 0:
             req_headers = {"cookie": cookies}
+        print('performing post request to: ', host)
         headers, body = request('POST', host, port, path, req_headers, body)
         self.history.append(url)
-        # if "set-cookie" in headers:
-        #     kv = headers["set-cookie"]
-        #     key, value = kv.split("=", 1)
-        #     self.jar[key] = value
         if "set-cookie" in headers:
             kv = headers["set-cookie"]
             key, value = kv.split("=", 1)
@@ -1035,9 +1026,6 @@ def find_inputs(element, out):
         return
     if element.tag == 'input' or element.tag == 'textarea' and 'name' in element.attributes:
         out.append(element)
-    # NOTE: this just adds all buttons on a form... not the specific button that was clicked
-    # elif element.tag == 'button' and 'id' in element.attributes:
-    #     out.append(element)
     for child in element.children:
         find_inputs(child, out)
     return out
