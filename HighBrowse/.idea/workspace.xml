@@ -2,12 +2,12 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="d6ddd4fa-9498-46a6-b03d-50b8ac71e88a" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/market_server.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../knownVariantsv2/main.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pavel.css" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/default.css" beforeDir="false" afterPath="$PROJECT_DIR$/default.css" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime.js" beforeDir="false" afterPath="$PROJECT_DIR$/runtime.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/market_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/market_server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../knownVariantsv2/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/../knownVariantsv2/main.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -18,9 +18,9 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="CSS File" />
         <option value="JavaScript File" />
         <option value="Python Script" />
+        <option value="CSS File" />
       </list>
     </option>
   </component>
@@ -112,7 +112,10 @@
       <workItem from="1570132847802" duration="22000" />
       <workItem from="1570988154142" duration="6947000" />
       <workItem from="1571086487077" duration="3000" />
-      <workItem from="1572197662865" duration="15720000" />
+      <workItem from="1572197662865" duration="33977000" />
+      <workItem from="1572802438313" duration="29000" />
+      <workItem from="1572802510749" duration="6000" />
+      <workItem from="1572805269675" duration="7476000" />
     </task>
     <servers />
   </component>

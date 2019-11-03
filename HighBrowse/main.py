@@ -644,7 +644,6 @@ class Browser:
         self.timer.stop()
         self.timer.start("Run JS")
         scripts = find_scripts(self.nodes, [])
-        print(scripts)
         if scripts is not None and len(scripts) > 0:
             for script in scripts:
                 l_host, l_port, l_path, l_fragment = \
@@ -687,6 +686,10 @@ class Browser:
         self.scroll_y = max(self.scroll_y - SCROLL_STEP, 0)
         self.render()
 
+    def format_params(self, attributes, out):
+        print(attributes)
+        return attributes
+
     def handle_click(self, e):
         if e.y < 60:  # Browser chrome
             if 10 <= e.x < 35 and 10 <= e.y < 50:
@@ -702,7 +705,8 @@ class Browser:
                     url = relative_url(elt.attributes["href"], self.url)
                     self.browse(url, False)
                 elif elt.tag == 'button':
-                    self.submit_form(elt)
+                    elt_atts = self.format_params(elt.attributes, [])
+                    self.submit_form(elt, elt_atts)
                 else:
                     self.edit_input(elt)
 
@@ -737,14 +741,18 @@ class Browser:
         self.event("change", element)
         self.re_layout()
 
-    def submit_form(self, element):
+    def submit_form(self, element, elm_level_params):
         # find form containing the button we clicked
         while element and element.tag != 'form':
             element = element.parent
         if element and not self.event("submit", element):
+            params = {}
+            # if we have element level params, add those (use case: button has id attribute)
+            for key in elm_level_params:
+                params[key] = elm_level_params[key]
+
             # compose dictionary of all form inputs
             inputs = find_inputs(element, [])
-            params = {}
             num_inputs = 0
             for curr_input in inputs:
                 if curr_input.tag == 'input':
@@ -776,7 +784,6 @@ class Browser:
         #         cookie_string += "&" + key + "=" + value
         #     req_headers = {"Cookie": cookie_string[1:]}
         req_headers = {}
-        print('jar contents: ', self.jar)
         cookies = self.jar.get((host, port), {})
         if len(cookies) > 0:
             req_headers = {"cookie": cookies}
@@ -786,7 +793,6 @@ class Browser:
         #     kv = headers["set-cookie"]
         #     key, value = kv.split("=", 1)
         #     self.jar[key] = value
-        print('about to set cookie back from post: ', headers)
         if "set-cookie" in headers:
             kv = headers["set-cookie"]
             key, value = kv.split("=", 1)
@@ -964,16 +970,25 @@ def parse_css(doc):
 
 
 def apply_styles(node, rules):
+    if not isinstance(node, TextNode) and 'id' in node.attributes:
+        print('Trying to find rules for node: ', node.attributes['id'])
+
     if not isinstance(node, ElementNode):
         node.style = node.parent.style
         return
+
     # apply css styles
     for selector, pairs in rules:
         if selector.matches(node):
+            print('found a style match for style: ', selector)
+            if 'id' in node.attributes:
+                print('node id is: ', node.attributes['id'])
             for prop in pairs:
                 node.style[prop] = pairs[prop]
                 if isinstance(selector, PseudoclassSelector):
                     print('Applying hover style to node: ', node.attributes['id'])
+
+    # TODO: only inline styles are working?
     # apply inline styles
     for prop, value in node.compute_style().items():
         node.style[prop] = value
@@ -1014,11 +1029,15 @@ def find_style_links(node):
     return listee
 
 
+# Finds all inputs and buttons and grabs name or ID attributes from them
 def find_inputs(element, out):
     if not isinstance(element, ElementNode):
         return
     if element.tag == 'input' or element.tag == 'textarea' and 'name' in element.attributes:
         out.append(element)
+    # NOTE: this just adds all buttons on a form... not the specific button that was clicked
+    # elif element.tag == 'button' and 'id' in element.attributes:
+    #     out.append(element)
     for child in element.children:
         find_inputs(child, out)
     return out
@@ -1167,6 +1186,9 @@ def populate_tree(tokens):
                 if not node and current_node.parent is not None:
                     current_node = current_node.parent
                 # Otherwise, bump up from found matching tag
+                if node is None:
+                    print(tag)
+
                 elif node.parent is not None:
                     current_node = node.parent
 

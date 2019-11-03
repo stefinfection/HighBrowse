@@ -1,20 +1,19 @@
-SHOP = [{'name': 'square', 'price': 10}, {'name': 'circle', 'price': 10}, {'name': 'triangle', 'price': 15}]      # items for sale in our marketplace {name: x, price: x}
-CART = []      # items in cart {name: x, quantity: x, price: x}
-LOGINS = {}          # account info {username: x, password: y}
+LOGINS = {'steph': 'rules'}          # account info {sername: x, password: y}
 TOKENS = {}
 NONCES = {}
+SHOP = [{'name': 'square', 'price': 10}, {'name': 'circle', 'price': 10}, {'name': 'triangle', 'price': 15}]
 
 
-def start_server():
+def start_server(curr_cart):
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.bind(('127.0.0.1', 8080))
     s.listen()
     while True:
         conx, addr = s.accept()
-        handle_connection(conx)
+        handle_connection(conx, curr_cart)
 
 
-def handle_connection(conx):
+def handle_connection(conx, curr_cart):
     req = conx.makefile("rb")
     method, url, version = req.readline().decode('utf8').split(" ", 2)
     assert method in ["GET", "POST"]
@@ -31,7 +30,7 @@ def handle_connection(conx):
         body = req.read(length).decode('utf8')
     else:
         body = None
-    headers, response = handle_request(method, url, headers, body)
+    headers, response = handle_request(method, url, headers, body, curr_cart)
     response = response.encode("utf8")
     conx.send('HTTP/1.0 200 OK\r\n'.encode('utf8'))
     for header, value in headers.items():
@@ -41,7 +40,7 @@ def handle_connection(conx):
     conx.close()
 
 
-def handle_request(method, url, headers, body):
+def handle_request(method, url, headers, body, curr_cart):
     #### Script requests ####
     if url == "/comment.js":
         with open("comment.js") as f:
@@ -70,11 +69,12 @@ def handle_request(method, url, headers, body):
         body += "<p><a href=/>Back</a></p>"
         return {}, body
 
-    # Get shop
+    # Get checkout
     if url == '/checkout':
-        subtotal = get_total(CART)
-        tax = get_tax(CART)
+        subtotal = get_total(curr_cart)
+        tax = get_tax(curr_cart)
         body = "<!doctype html>"
+        body += "<body>"
         body += "<form action=/confirm method=post>"
         body += "<p>Sub-Total: " + format_price(subtotal) + "</p>"
         body += "<p>Tax: " + format_price(tax) + "</p>"
@@ -87,11 +87,12 @@ def handle_request(method, url, headers, body):
         body += "<p CVV:<input id=cvv>></input></p>"
         body += "<p><button>Complete Purchase</button></p>"
         body += "<p><a href=/></a></p>"
-        body += "</form>"
+        body += "</form></body>"
         return {}, body
 
     # Init forms that may change from GET vs POST
-    out = "<!doctype html><body>"
+    out = "<!doctype html><html>"
+    out += "<head></head><body>"
 
     # Get cart
     if url == "/cart":
@@ -104,16 +105,17 @@ def handle_request(method, url, headers, body):
             out += "<p><a href=/>Logout</a></p>"
         else:
             out += "<p><a href=/login>Login</a></p>"
-        out += "<form action=/add method=post>"
+        out += "<form action=/cart method=post>"
         for item in SHOP:
-            out += "<p>" + item.name + "</p>" \
-                   "<p>" + item.price + "</p>" + \
-                   "<p><button item=" + item.name + ">Add Item</button></p>" \
-                   "</form><p><a href=/cart></a></p>"
+            out += "<div>"
+            out += "<p>" + item['name'] + " " + format_price(item['price']) + "</p>"
+            out += "<p><button id=test item=" + item['name'] + ">Add Item</button></p>"
+            out += "</div>"
 
     # Add nonce
     nonce = str(random.random())[2:]
-    out += "<input name=nonce type=hidden value=" + nonce + ">"
+    # TODO: add nonce - this is messing up formatting!!
+    # out += "<input name=nonce type=hidden value=" + nonce + ">"
 
     # Complete purchase or add to cart
     if method == 'POST':
@@ -122,12 +124,20 @@ def handle_request(method, url, headers, body):
         # Add item to cart or clear
         if url == '/cart' and username:
             if 'item' in params:
-                add_item = get_item_object(params['item'])
-                CART.append(add_item)
+                add_item = get_item_object(params['item'], curr_cart)
+                if add_item is None:
+                    shop_item = get_item_object(params['item'], SHOP)
+                    add_item = shop_item.copy()
+                    add_item['quantity'] = 1
+                    curr_cart.append(add_item)
+                else:
+                    add_item['quantity'] += 1
             else:
-                CART_ITEMS = []
+                curr_cart.clear()
         elif url == '/cart':
+            # TODO: can we make p elements be inline?
             out += '<p class=errors>Please login before adding items to cart!</p>'
+            out += '<p><a href=/login>Go To Login</a></p>'
 
         # Completing purchase
         # TODO: add permissions/nonce checks here
@@ -143,26 +153,25 @@ def handle_request(method, url, headers, body):
                 TOKENS[token] = username
                 NONCES[username] = nonce
                 headers["set-cookie"] = "token=" + token
-                out += "<p class=success>Logged in as {}</p>".format(username)
+                out += "<p id=log_success class=success>Logged in as {}</p>".format(username)
             else:
-                out += "<p class=errors>Login failed!</p>".format(username)
+                out += "<p id=log_fail class=errors>Login failed!</p>".format(username)
 
     # End of cart
-    if url == "/cart":
-        for item in CART:
-            out += "<p>" + item.name + "</p>"
-            out += "<p>" + item.quantity + "</p>"
-            out += "<p>" + item.price + "</p>"
+    if url == "/cart" and username:
+        for item in cart:
+            out += "<p>" + item['name'] + ' ' + str(item['quantity']) + ' ' + format_price(item['price']) + "</p>"
             # TODO: put in little image here too
-        out += "<p><button>Clear Cart</button></p>"
-        out += "<p><a href=/>Keep Shopping</a></p>"
-        out += "<p><a href=/checkout>Proceed To Checkout</a></p>"
-        out += "</form>"
+        if username:
+            out += "<p><button>Clear Cart</button></p>"
+            out += "<p><a href=/>Keep Shopping</a></p>"
+            out += "<p><a href=/checkout>Proceed To Checkout</a></p>"
 
     # Finish cart or shop
-    out += "<form action=add method=post>"
-    out += "<script src=/comment.js></script>"
-    out += "</body>"
+    out += "</form>"
+    # out += "<script src=/comment.js></script>"
+    out += "</body></html>"
+
     return headers, out
 
 
@@ -180,9 +189,12 @@ def parse_cookies(s):
 
 def form_decode(body):
     params = {}
-    for field in body.split("&"):
-        name, value = field.split("=", 1)
-        params[name] = value.replace("%20", " ")
+    if body is not None:
+        for field in body.split("&"):
+            name, value = field.split("=", 1)
+            params[name] = value.replace("%20", " ")
+    else:
+        print('No body received in form_decode')
     return params
 
 
@@ -209,9 +221,11 @@ def get_item_object(item_name, items):
     for item in items:
         if item['name'] == item_name:
             return item
+    return None
 
 if __name__ == "__main__":
     import socket
     import random
-    print('Server running on 8000...')
-    start_server()
+    print('Server running on 8080...')
+    cart = []
+    start_server(cart)
