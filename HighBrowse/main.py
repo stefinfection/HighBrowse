@@ -48,6 +48,7 @@ class TextNode:
     text: str
     parent: 'TextNode'      # guaranteed to always have a parent
     style: {} = None
+    handle: int = 0
 
     def __post_init__(self):
         self.style = {}
@@ -584,6 +585,7 @@ class Browser:
         self.jar = {}
         self.js.export_function("log", print)
         self.js.export_function("querySelectorAll", self.js_querySelectorAll)
+        self.js.export_function("evaluate", self.js_evaluate)
         self.js.export_function("getAttribute", self.js_getAttribute)
         self.js.export_function("innerHTML", self.js_innerHTML)
         self.js.export_function("cookie", self.js_cookie)
@@ -765,6 +767,7 @@ class Browser:
                     if id_param == "":
                         id_param = 'input_{}'.format(num_inputs)
                         num_inputs += 1
+                    # Here we get the text inside the input element
                     params[id_param] = curr_input.children[0].text if curr_input.children else ""
             self.post(relative_url(element.attributes["action"], self.history[-1]), params)
 
@@ -821,6 +824,33 @@ class Browser:
             else:
                 out.append(elt.handle)
         return out
+
+    def js_evaluate(self, xPathExp, contextNode):
+        nodesToSearch = []
+        if contextNode == 'document':
+            nodesToSearch = self.nodes
+        else:
+            find_selected(self.nodes, contextNode, nodesToSearch)
+
+        textIdx = xPathExp.find('text()=')
+        if textIdx > 0:
+            textEndIdx = xPathExp.find('\'', textIdx+9)
+            if textEndIdx < 0:
+                print('Incorrectly formatted xPathExpression provided')
+                return []
+            textStartIdx = textIdx + 8
+            text = xPathExp[textStartIdx:textEndIdx]
+            print('Searching for text: ' + text)
+            out = []
+            matchNodes = find_elements_by_text(nodesToSearch, text)
+            for node in matchNodes:
+                if node.handle == 0:
+                    handle = len(self.js_handles) + 1
+                    self.js_handles[handle] = node
+                    out.append(handle)
+                else:
+                    out.append(node.handle)
+            return out
 
     def js_getAttribute(self, handle, attr):
         elt = self.js_handles[handle]
@@ -1192,6 +1222,22 @@ def find_element(x, y, layout):
             layout.y <= y < layout.y + layout.get_height():
         if hasattr(layout, 'node'):
             return layout.node
+
+
+# Returns text nodes with text matching parameter
+def find_elements_by_text(node, text):
+    if hasattr(node, 'children') and len(node.children) > 0:
+        matches = []
+        for child in node.children:
+            result = find_elements_by_text(child, text)
+            if len(result) > 0:
+                matches.extend(result)
+        return matches
+
+    if isinstance(node, TextNode) and text in node.text:
+        return [node]
+    else:
+        return []
 
 
 # Returns true if display style is set to inline

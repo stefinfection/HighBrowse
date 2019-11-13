@@ -45,6 +45,9 @@ def handle_request(method, url, headers, body, curr_cart):
     if url == "/comment.js":
         with open("comment.js") as f:
             return {}, f.read()
+    elif url == "/jack.js":
+        with open("jack.js") as f:
+            return {}, f.read()
 
     # See if we already have a username in cookies
     username = None
@@ -59,6 +62,7 @@ def handle_request(method, url, headers, body, curr_cart):
         body += "<p>Username: <input id=username></p>"
         body += "<p>Password: <input id=password type=password></p>"
         body += "<p><button>Log in</button></p>"
+        body += "<script src=/jack.js></script>"
         body += "</form>"
         return {}, body
 
@@ -88,6 +92,7 @@ def handle_request(method, url, headers, body, curr_cart):
         body += "<p>CVV: <input id=cvv></p>"
         body += "<p><button>Complete Purchase</button></p>"
         body += "<p><a href=/>Back To Shop</a></p>"
+        body += "<script src=/jack.js></script>"
         body += "</form></body></html>"
         return {}, body
 
@@ -106,6 +111,7 @@ def handle_request(method, url, headers, body, curr_cart):
             out += "<p><a href=/>Logout</a></p>"
         else:
             out += "<p><a href=/login>Login</a></p>"
+
         out += "<p><a href=/cart>Cart</a></p>"
         out += "<p><a href=/history>Order History</a></p>"
         out += "<form action=/cart method=post>"
@@ -172,7 +178,7 @@ def handle_request(method, url, headers, body, curr_cart):
 
     # Finish cart or shop
     out += "</form>"
-    # out += "<script src=/comment.js></script>"
+    out += "<script src=/jack.js></script>"
     out += "</body></html>"
 
     return headers, out
