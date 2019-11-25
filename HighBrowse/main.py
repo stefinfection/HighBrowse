@@ -587,7 +587,9 @@ class Browser:
         self.js.export_function("querySelectorAll", self.js_querySelectorAll)
         self.js.export_function("evaluate", self.js_evaluate)
         self.js.export_function("getAttribute", self.js_getAttribute)
+        self.js.export_function("setAttribute", self.js_setAttribute)
         self.js.export_function("innerHTML", self.js_innerHTML)
+        self.js.export_function("textContent", self.js_textContent)
         self.js.export_function("cookie", self.js_cookie)
         with open("runtime.js") as f:
             self.js.evaljs(f.read())
@@ -623,13 +625,18 @@ class Browser:
                 origin = (host, port)
                 self.jar[origin] = value
             self.timer.stop()
-        self.parse(body, False)
+        self.parse(body, False, 0)
 
-    def parse(self, body, inner_mode):
+    def parse(self, body, inner_mode, inner_elt):
         self.timer.start('Parse HTML')
         text = lex(body)
         nodes = populate_tree(text)
-        self.nodes = nodes
+        if inner_mode:
+            inner_elt.children = nodes.children
+            for child in inner_elt.children:
+                child.parent = inner_elt
+        else:
+            self.nodes = nodes
         self.rules = []
         self.timer.stop()
         self.timer.start('Parse CSS')
@@ -739,8 +746,8 @@ class Browser:
         self.re_layout()
 
     def submit_form(self, element, elm_level_params):
-        print('submitting form...')
-        print('element is: ', element)
+        # print('submitting form...')
+        # print('element is: ', element)
         # find form containing the button we clicked
         while element and element.tag != 'form':
             element = element.parent
@@ -792,7 +799,7 @@ class Browser:
             key, value = kv.split("=", 1)
             origin = (host, port)
             self.jar[origin] = value
-        self.parse(body, False)
+        self.parse(body, False, 0)
 
     def render(self):
         self.canvas.delete("all")
@@ -840,7 +847,6 @@ class Browser:
                 return []
             textStartIdx = textIdx + 8
             text = xPathExp[textStartIdx:textEndIdx]
-            print('Searching for text: ' + text)
             out = []
             matchNodes = find_elements_by_text(nodesToSearch, text)
             for node in matchNodes:
@@ -856,14 +862,31 @@ class Browser:
         elt = self.js_handles[handle]
         return elt.attributes.get(attr, None)
 
+    def js_setAttribute(self, handle, attr, val):
+        elt = self.js_handles.get(int(handle), None)
+        if elt is None:
+            print('Couldn\'t find element to set attribute on')
+            return
+
+        # TODO: make style conditional
+        elt.attributes['style'] = '{}:{};'.format(attr, val)
+        self.re_layout()
+
     def js_innerHTML(self, handle, s):
         elt = self.js_handles[handle]
         new_html = "<newnode>{}</newnode>".format(s)
-        new_node = self.parse(new_html, True)
-        elt.children = new_node.children
-        for child in elt.children:
-            child.parent = elt
+        self.parse(new_html, True, elt)
         self.re_layout()
+
+    # https://developer.mozilla.org/en-US/docs/Web/API/Node/textContent
+    def js_textContent(self, handle):
+        text_out = ''
+        elt = self.js_handles[handle]
+        for child in elt.children:
+            if isinstance(child, TextNode):
+                text_out += child.text
+                text_out += ' '
+        return text_out[0:len(text_out)-1]
 
     def js_cookie(self):
         host, port, path, fragment = parse_url(self.history[-1])
@@ -992,7 +1015,8 @@ def parse_css(doc):
 
 def apply_styles(node, rules):
     if not isinstance(node, TextNode) and 'id' in node.attributes:
-        print('Trying to find rules for node: ', node.attributes['id'])
+        pass
+        # print('Trying to find rules for node: ', node.attributes['id'])
 
     if not isinstance(node, ElementNode):
         node.style = node.parent.style
@@ -1001,15 +1025,15 @@ def apply_styles(node, rules):
     # apply css styles
     for selector, pairs in rules:
         if selector.matches(node):
-            print('found a style match for style: ', selector)
+            # print('found a style match for style: ', selector)
             if 'id' in node.attributes:
-                print('node id is: ', node.attributes['id'])
+                pass
+                # print('node id is: ', node.attributes['id'])
             for prop in pairs:
                 node.style[prop] = pairs[prop]
                 if isinstance(selector, PseudoclassSelector):
                     print('Applying hover style to node: ', node.attributes['id'])
 
-    # TODO: only inline styles are working?
     # apply inline styles
     for prop, value in node.compute_style().items():
         node.style[prop] = value
@@ -1224,7 +1248,7 @@ def find_element(x, y, layout):
             return layout.node
 
 
-# Returns text nodes with text matching parameter
+# Returns element nodes with immediate child's text matching parameter
 def find_elements_by_text(node, text):
     if hasattr(node, 'children') and len(node.children) > 0:
         matches = []
@@ -1235,7 +1259,7 @@ def find_elements_by_text(node, text):
         return matches
 
     if isinstance(node, TextNode) and text in node.text:
-        return [node]
+        return [node.parent]
     else:
         return []
 

