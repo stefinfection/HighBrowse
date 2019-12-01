@@ -2,9 +2,11 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="d6ddd4fa-9498-46a6-b03d-50b8ac71e88a" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/jack_server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/jack.js" beforeDir="false" afterPath="$PROJECT_DIR$/jack.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/market_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/market_server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/runtime.js" beforeDir="false" afterPath="$PROJECT_DIR$/runtime.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../knownVariantsv2/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/../knownVariantsv2/main.py" afterDir="false" />
     </list>
@@ -17,9 +19,9 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="Python Script" />
         <option value="CSS File" />
         <option value="JavaScript File" />
+        <option value="Python Script" />
       </list>
     </option>
   </component>
@@ -39,7 +41,7 @@
     <property name="node.js.path.for.package.tslint" value="project" />
     <property name="node.js.selected.package.eslint" value="(autodetect)" />
     <property name="node.js.selected.package.tslint" value="(autodetect)" />
-    <property name="settings.editor.selected.configurable" value="reference.settingsdialog.IDE.editor.colors" />
+    <property name="settings.editor.selected.configurable" value="editor.preferences.fonts.default" />
   </component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
@@ -140,7 +142,10 @@
       <workItem from="1572805269675" duration="11272000" />
       <workItem from="1573264651889" duration="574000" />
       <workItem from="1573602872880" duration="19233000" />
-      <workItem from="1574625063421" duration="11465000" />
+      <workItem from="1574625063421" duration="15890000" />
+      <workItem from="1574873464340" duration="551000" />
+      <workItem from="1574879566780" duration="2642000" />
+      <workItem from="1575144067868" duration="26543000" />
     </task>
     <servers />
   </component>

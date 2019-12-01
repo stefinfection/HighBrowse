@@ -569,6 +569,7 @@ class Browser:
     timer: 'Timer' = None
     hovered_elt: ElementNode = None
     jar: {} = None
+    pledge_map: {} = None
 
     def __post_init__(self):
         self.window = tkinter.Tk()
@@ -583,6 +584,7 @@ class Browser:
         self.js = dukpy.JSInterpreter()
         self.js_handles = {}
         self.jar = {}
+        self.pledge_map = {}
         self.js.export_function("log", print)
         self.js.export_function("querySelectorAll", self.js_querySelectorAll)
         self.js.export_function("evaluate", self.js_evaluate)
@@ -591,6 +593,8 @@ class Browser:
         self.js.export_function("innerHTML", self.js_innerHTML)
         self.js.export_function("textContent", self.js_textContent)
         self.js.export_function("cookie", self.js_cookie)
+        self.js.export_function("sendPost", self.post)
+        self.js.export_function("getPledge", self.js_getPledge)
         with open("runtime.js") as f:
             self.js.evaljs(f.read())
 
@@ -652,7 +656,7 @@ class Browser:
         self.rules.sort(key=lambda x: x[0].score())
         self.timer.stop()
         self.timer.start("Run JS")
-        scripts = find_scripts(self.nodes, [])
+        scripts = find_scripts(self.nodes, [], self.pledge_map)
         if scripts is not None and len(scripts) > 0:
             for script in scripts:
                 l_host, l_port, l_path, l_fragment = \
@@ -751,7 +755,6 @@ class Browser:
         # find form containing the button we clicked
         while element and element.tag != 'form':
             element = element.parent
-            print('next element up: ', element.tag)
         if element and not self.event("submit", element):
             params = {}
             # if we have element level params, add those (use case: button has id attribute)
@@ -778,8 +781,7 @@ class Browser:
                     params[id_param] = curr_input.children[0].text if curr_input.children else ""
             self.post(relative_url(element.attributes["action"], self.history[-1]), params)
 
-    def post(self, url, params):
-        print('posting...')
+    def post(self, url, params, add_headers=None, ajax=False):
         body = ''
         for param, value in params.items():
             body += '&' + param + '='
@@ -791,15 +793,18 @@ class Browser:
         cookies = self.jar.get((host, port), {})
         if len(cookies) > 0:
             req_headers = {"cookie": cookies}
-        print('performing post request to: ', host)
+        if add_headers and len(add_headers) > 0:
+            for header in add_headers:
+                req_headers[header] = add_headers[header]
         headers, body = request('POST', host, port, path, req_headers, body)
-        self.history.append(url)
-        if "set-cookie" in headers:
-            kv = headers["set-cookie"]
-            key, value = kv.split("=", 1)
-            origin = (host, port)
-            self.jar[origin] = value
-        self.parse(body, False, 0)
+        if not ajax:
+            self.history.append(url)
+            if "set-cookie" in headers:
+                kv = headers["set-cookie"]
+                key, value = kv.split("=", 1)
+                origin = (host, port)
+                self.jar[origin] = value
+            self.parse(body, False, 0)
 
     def render(self):
         self.canvas.delete("all")
@@ -906,6 +911,13 @@ class Browser:
         else:
             print('Event has no handler', eType)
             return cancelled
+
+    def js_getPledge(self, pledge_type, src):
+        script_pledges = self.pledge_map[src]
+        if script_pledges is not None:
+            return script_pledges[pledge_type]
+        else:
+            return False
 
 
 @dataclass
@@ -1052,14 +1064,6 @@ def apply_styles(node, rules):
     for child in node.children:
         apply_styles(child, rules)
 
-# TODO: erase, depreciated...
-# def get_browser_styles():
-#     with open("default.css") as f:
-#         browser_style = f.read()
-#         browser_rules = parse_css(browser_style)
-#         browser_rules.sort(key=lambda x: x[0].score())
-#         return browser_rules
-
 
 def find_style_links(node):
     listee = []
@@ -1085,13 +1089,20 @@ def find_inputs(element, out):
     return out
 
 
-def find_scripts(node, out):
-    if not isinstance(node, ElementNode): return
-    if node.tag == "script" and \
-       "src" in node.attributes:
+# TODO: test this
+def find_scripts(node, out, pledge_map):
+    if not isinstance(node, ElementNode):
+        return
+    if node.tag == "script" and "src" in node.attributes:
         out.append(node.attributes["src"])
+    if node.tag == "script" and "pledge" in node.attributes:
+        pledges = node.attributes["pledge"]
+        inner_pledges = {}
+        for key in pledges:
+            inner_pledges[key] = pledges[key]
+        pledge_map[node.attributes["src"]] = inner_pledges
     for child in node.children:
-        find_scripts(child, out)
+        find_scripts(child, out, pledge_map)
     return out
 
 
@@ -1121,11 +1132,9 @@ def relative_url(url, current):
         slash_split = current.split('/')
         if len(slash_split) > 1:
             base = slash_split[0]
-            print('update relative url: ', base + url)
             return base + url
         else:
             ret_url = "/".join(current.split("/")[:3]) + url
-            print('relative url: ', ret_url)
             return ret_url
     else:
         ret_url = current.rsplit("/", 1)[0] + "/" + url
@@ -1208,7 +1217,16 @@ def populate_tree(tokens):
                     out = attr.split("=", 1)
                     name = out[0]
                     val = out[1].strip("\"") if len(out) > 1 else ""
-                    attr_obj[name.lower()] = val
+                    if val[0] == '{':
+                        val = val[1:len(val)-1]
+                        pledge_pairs = val.split(',')
+                        pledge_obj = {}
+                        for pledge_pair in pledge_pairs:
+                            pledge_name, pledge_val = pledge_pair.split(':')
+                            pledge_obj[pledge_name.lower()] = pledge_val == 'True'
+                        attr_obj[name] = pledge_obj
+                    else:
+                        attr_obj[name.lower()] = val
 
                 # Create element node
                 child = ElementNode(tag_name, [], current_node, attr_obj)

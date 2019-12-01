@@ -3,10 +3,17 @@ console = {
     log: function(x) { call_python("log", x); }
 };
 document = {
-    querySelectorAll: function(s) {
-        return call_python("querySelectorAll", s).map(function(h) {
-            return new Node(h);
-        });
+    querySelectorAll: function(selector, src) {
+        var pledgeIdx = REQ_PLEDGE.indexOf(selector);
+        var requiresPledge = pledgeIdx >= 0;
+        if (!requiresPledge || (requiresPledge && hasPledge(selector, src))) {
+            return call_python("querySelectorAll", selector).map(function(h) {
+                return new Node(h);
+            });
+        } else {
+            console.log('The script ' + src + ' does not have permission to access elements ' + selector);
+            return [];
+        }
     },
     evaluate: function(x, n) {
         return call_python("evaluate", x, n).map(function(h) {
@@ -14,6 +21,14 @@ document = {
         });
     }
 };
+
+// Pledge stuff
+REQ_PLEDGE = ['cookie', 'input'];
+function hasPledge(type, src) {
+    var hasPledge = call_python("getPledge", type, src);
+    console.log('returning from getting pledge');
+    return hasPledge;
+}
 
 // Node stuff
 function Node(handle) {
@@ -50,7 +65,6 @@ Object.defineProperty(document, 'cookie', {
     }
 });
 
-
 // Event stuff
 LISTENERS = {};
 function Event() {
@@ -71,3 +85,24 @@ function __runHandlers(handle, type) {
     }
     return evt.cancelled;
 }
+
+// HTTP Request stuff
+function XmlHttpRequest() {
+    this.url = '';
+    this.reqType = '';
+    this.headers = [];
+}
+XmlHttpRequest.prototype.open = function(reqType, url) {
+    this.url = url;
+    this.reqType = reqType;
+};
+XmlHttpRequest.prototype.setRequestHeader = function(name, value) {
+    this.headers[name] = value;
+};
+XmlHttpRequest.prototype.send = function(params) {
+    if (this.reqType === 'POST') {
+        call_python("sendPost", this.url, params, this.headers, true);
+    } else {
+        console.log("Request type {} not yet supported".format(this.reqType));
+    }
+};
