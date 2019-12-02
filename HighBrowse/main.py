@@ -196,7 +196,6 @@ class BlockLayout:
                                    self.node.style.get("background-color", "")))
             if self.bb > 0:
                 print('Applying a border to {} because parent {} has border \n\n'.format(child.node.attributes.get('id', 'NO_ID'), self.node.attributes.get('id', 'NO_ID')))
-                # FIXME parent id is same as child id...
                 dl.append(
                     DrawRect(self.x, self.y + self.h - self.bb, self.x + self.w, self.y + self.h, self.node.style.get("border-color", "black"),
                              self.node.style.get("background-color", "")))
@@ -582,10 +581,10 @@ class Browser:
         self.window.bind("<Up>", self.scroll_up)
         self.window.bind("<Down>", self.scroll_down)
         self.window.bind("<Button-1>", self.handle_click)
-        self.window.bind("<Motion>", self.handle_hover)
         self.history = []
         self.timer = Timer()
 
+        # TODO: interpreter generation and mapping
         # Two bytes to represent input and cookie: 0b00CI
         # If 0, False if 1, True
         self.js_interpreters = { 0: dukpy.JSInterpreter(), 1: dukpy.JSInterpreter(),  2: dukpy.JSInterpreter(), 3: dukpy.JSInterpreter() }
@@ -607,7 +606,7 @@ class Browser:
         # read in actual code
         for i in self.js_interpreters:
             with open("runtime.js") as f:
-                (self.js_interpreters[i]).evaljs(f.read(), pledge=i)
+                (self.js_interpreters[i]).evaljs(f.read(), pledge=i)    # TODO: passing pledge level here
 
         self.js_handles = {}
         self.jar = {}
@@ -724,28 +723,6 @@ class Browser:
                     self.submit_form(elt, elt.attributes)
                 else:
                     self.edit_input(elt)
-
-    def handle_hover(self, e):
-        pass
-        # # Remove any previous hovering
-        # print('HOVER CALL')
-        # if self.hovered_elt:
-        #     print('Removing hover from element: ', self.hovered_elt.attributes['id'])
-        #     self.hovered_elt.pseudoClasses.remove("hover")
-        # self.hovered_elt = None
-        #
-        # # Find nearest box layout parent
-        # x, y = e.x, e.y - 60 + self.scroll_y
-        # elt = find_element(x, y, self.layout)
-        # while elt and not isinstance(elt, ElementNode):
-        #     elt = elt.parent
-        #
-        # # If we found our new element, add class
-        # if elt and elt.tag != 'body':
-        #     elt.pseudoClasses.add("hover")
-        #     self.hovered_elt = elt
-        #
-        # self.re_layout()
 
     def edit_input(self, element):
         new_text = input('Enter new text: ')
@@ -1252,7 +1229,6 @@ def get_pledge_value(pledge_pairs, pledge_levels):
             curr_val = pledge_levels[pledge_name]
             pledge = curr_val + pledge
     return pledge
-
 
 
 def find_element(x, y, layout):

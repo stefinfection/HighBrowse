@@ -1,9 +1,9 @@
-// Static values
+/* STATICS */
 INPUT_VAL = 1;
 COOKIE_VAL = 2;
 PLEDGE_LEVEL = dukpy['pledge'];
 
-// Global variables
+/* GLOBALS */
 console = {
     log: function(x) { call_python("log", x); }
 };
@@ -27,10 +27,8 @@ document = {
 };
 Object.defineProperty(document, 'cookie', {
     get: function() {
-        console.log('trying to get cookie');
         var hasCookiePledge = (PLEDGE_LEVEL & COOKIE_VAL) >= COOKIE_VAL;
         if (hasCookiePledge) {
-            console.log('about to return cookie on js side');
             return call_python("cookie");
         } else {
             console.log('The requesting script does not have permission to access cookies');
@@ -39,7 +37,7 @@ Object.defineProperty(document, 'cookie', {
     }
 });
 
-// Node stuff
+/* NODE */
 function Node(handle) {
     this.handle = handle;
 }
@@ -72,7 +70,7 @@ Object.defineProperty(Node.prototype, 'textContent', {
     }
 });
 
-// Event stuff
+/* EVENTS */
 LISTENERS = {};
 function Event() {
     this.cancelled = false;
@@ -93,7 +91,7 @@ function __runHandlers(handle, type) {
     return evt.cancelled;
 }
 
-// HTTP Request stuff
+/* XML HTTP REQUESTS */
 function XmlHttpRequest() {
     this.url = '';
     this.reqType = '';

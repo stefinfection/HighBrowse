@@ -1,12 +1,14 @@
-LOGINS = {'steph': 'rules'}          # account info {sername: x, password: y}
+LOGINS = {'steph': 'rules'}          # account info {username: x, password: y}
 TOKENS = {}
-NONCES = {}
 SHOP = [{'name': 'square', 'price': 10}, {'name': 'circle', 'price': 10}, {'name': 'triangle', 'price': 15}]
+COOKIE_PLEDGE = False
+INPUT_PLEDGE = False
+INCLUDE_CONVERSION_SCRIPT = False
 
 
-def start_server(curr_cart):
+def start_server(curr_cart, port):
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
-    s.bind(('127.0.0.1', 8080))
+    s.bind(('127.0.0.1', port))
     s.listen()
     while True:
         conx, addr = s.accept()
@@ -45,8 +47,8 @@ def handle_request(method, url, headers, body, curr_cart):
     if url == "/comment.js":
         with open("comment.js") as f:
             return {}, f.read()
-    elif url == "/jack.js":
-        with open("jack.js") as f:
+    elif url == "/dollarsToEuros.js":
+        with open("dollarsToEuros.js") as f:
             return {}, f.read()
 
     # See if we already have a username in cookies
@@ -62,15 +64,12 @@ def handle_request(method, url, headers, body, curr_cart):
         body += "<p>Username: <input id=username></p>"
         body += "<p>Password: <input id=password type=password></p>"
         body += "<p><button>Log in</button></p>"
-        body += "<script src=/jack.js></script>"
         body += "</form>"
         return {}, body
 
-    # TODO: actually route to this?
     # Get history
     if url == "/history":
         body = "<!doctype html>"
-        # TODO: add actual items here
         body += "<p><a href=/>Back</a></p>"
         return {}, body
 
@@ -92,7 +91,6 @@ def handle_request(method, url, headers, body, curr_cart):
         body += "<p>CVV: <input id=cvv></p>"
         body += "<p><button>Complete Purchase</button></p>"
         body += "<p><a href=/>Back To Shop</a></p>"
-        body += "<script src=/jack.js></script>"
         body += "</form></body></html>"
         return {}, body
 
@@ -107,7 +105,6 @@ def handle_request(method, url, headers, body, curr_cart):
     # Get shop
     if url == "/":
         if username:
-            # TODO: make this logout
             out += "<p><a href=/>Logout</a></p>"
         else:
             out += "<p><a href=/login>Login</a></p>"
@@ -120,11 +117,6 @@ def handle_request(method, url, headers, body, curr_cart):
             out += "<p>" + item['name'] + " " + format_price(item['price']) + "</p>"
             out += "<p><button id=test item=" + item['name'] + ">Add Item</button></p>"
             out += "</div>"
-
-    # Add nonce
-    nonce = str(random.random())[2:]
-    # TODO: add nonce - this is messing up formatting!!
-    # out += "<input name=nonce type=hidden value=" + nonce + ">"
 
     # Complete purchase or add to cart
     if method == 'POST':
@@ -144,12 +136,10 @@ def handle_request(method, url, headers, body, curr_cart):
             else:
                 curr_cart.clear()
         elif url == '/cart':
-            # TODO: can we make p elements be inline?
             out += '<p class=errors>Please login before adding items to cart!</p>'
             out += '<p><a href=/login>Go To Login</a></p>'
 
         # Completing purchase
-        # TODO: add permissions/nonce checks here
         elif url == '/confirm':
             out += "<p>Thank you for shopping</p>"
             out += "<a href=/>Return to store</a>"
@@ -160,7 +150,6 @@ def handle_request(method, url, headers, body, curr_cart):
                 username = params.get("username")
                 token = str(random.random())[2:]
                 TOKENS[token] = username
-                NONCES[username] = nonce
                 headers["set-cookie"] = "token=" + token
                 out += "<p id=log_success class=success>Logged in as {}</p>".format(username)
             else:
@@ -177,7 +166,10 @@ def handle_request(method, url, headers, body, curr_cart):
 
     # Finish cart or shop
     out += "</form>"
-    out += "<script src=/jack.js pledge={cookie:True,input:False}></script>"
+    if INCLUDE_CONVERSION_SCRIPT:
+        pledges = 'cookie:{},input:{}'.format(COOKIE_PLEDGE, INPUT_PLEDGE)
+        pledges = '{' + pledges + '}'
+        out += "<script src=/dollarsToEuros.js pledge={}></script>".format(pledges)
     out += "</body></html>"
     return headers, out
 
@@ -233,6 +225,15 @@ def get_item_object(item_name, items):
 if __name__ == "__main__":
     import socket
     import random
-    print('Server running on 8080...')
+    import sys
     cart = []
-    start_server(cart)
+    port = sys.argv[1]
+    if port is None:
+        print('Please enter port')
+    else:
+        print('Server running on {}...'.format(port))
+    # Set globals
+    INCLUDE_CONVERSION_SCRIPT = sys.argv[2] == 'True'
+    COOKIE_PLEDGE = sys.argv[3] == 'True'
+    INPUT_PLEDGE = sys.argv[4] == 'True'
+    start_server(cart, int(port))

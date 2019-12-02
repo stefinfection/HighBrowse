@@ -1,6 +1,3 @@
-ccDb = []
-
-
 def start_server():
     s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     s.bind(('127.0.0.1', 8090))
@@ -40,7 +37,16 @@ def handle_connection(conx):
 def handle_request(method, url, headers, body):
     if method == 'POST':
         params = form_decode(body)
-        print('Jacked!')
+        print('\n')
+        print('ME WANT COOKIES (AND DATA)')
+        print('            _  _')
+        print('         _ /0\/ \_')
+        print('  .-.  .-` \_/\\0/ \'-.')
+        print(' /:::\ / ,_________,  \\')
+        print('/\:::/ \  \'.(:::/  `\'-;')
+        print('\ `-\'`\ \'._`\"\'\"\'\__    \\')
+        print(' `\'-.  \   `)-=-=(  `,   |')
+        print('     \\  `-"`      `"-`   /\'\)')
         print(params)
     out = ''
     return headers, out
