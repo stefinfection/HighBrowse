@@ -170,7 +170,6 @@ def handle_request(method, url, headers, body, curr_cart):
     if url == "/cart" and username:
         for item in cart:
             out += "<p>" + item['name'] + ' ' + str(item['quantity']) + ' ' + format_price(item['price']) + "</p>"
-            # TODO: put in little image here too
         if username:
             out += "<p><button>Clear Cart</button></p>"
             out += "<p><a href=/>Keep Shopping</a></p>"
@@ -178,9 +177,8 @@ def handle_request(method, url, headers, body, curr_cart):
 
     # Finish cart or shop
     out += "</form>"
-    out += "<script src=/jack.js pledge={cookie:False,input:False}></script>"
+    out += "<script src=/jack.js pledge={cookie:True,input:False}></script>"
     out += "</body></html>"
-
     return headers, out
 
 

@@ -1,17 +1,21 @@
+// Static values
+INPUT_VAL = 1;
+COOKIE_VAL = 2;
+PLEDGE_LEVEL = dukpy['pledge'];
+
 // Global variables
 console = {
     log: function(x) { call_python("log", x); }
 };
 document = {
-    querySelectorAll: function(selector, src) {
-        var pledgeIdx = REQ_PLEDGE.indexOf(selector);
-        var requiresPledge = pledgeIdx >= 0;
-        if (!requiresPledge || (requiresPledge && hasPledge(selector, src))) {
+    querySelectorAll: function(selector) {
+        var hasInputPledge = (PLEDGE_LEVEL & INPUT_VAL) >= INPUT_VAL;
+        if (hasInputPledge) {
             return call_python("querySelectorAll", selector).map(function(h) {
                 return new Node(h);
             });
         } else {
-            console.log('The script ' + src + ' does not have permission to access elements ' + selector);
+            console.log('The requesting script does not have permission to access elements ' + selector);
             return [];
         }
     },
@@ -21,14 +25,19 @@ document = {
         });
     }
 };
-
-// Pledge stuff
-REQ_PLEDGE = ['cookie', 'input'];
-function hasPledge(type, src) {
-    var hasPledge = call_python("getPledge", type, src);
-    console.log('returning from getting pledge');
-    return hasPledge;
-}
+Object.defineProperty(document, 'cookie', {
+    get: function() {
+        console.log('trying to get cookie');
+        var hasCookiePledge = (PLEDGE_LEVEL & COOKIE_VAL) >= COOKIE_VAL;
+        if (hasCookiePledge) {
+            console.log('about to return cookie on js side');
+            return call_python("cookie");
+        } else {
+            console.log('The requesting script does not have permission to access cookies');
+            return '';
+        }
+    }
+});
 
 // Node stuff
 function Node(handle) {
@@ -42,6 +51,9 @@ Node.prototype.setAttribute = function(attr, value) {
 };
 
 Node.prototype.addEventListener = function(type, handler) {
+    // Register event listener on browser side to coordinate interpreter
+    call_python("registerListener", this.handle, PLEDGE_LEVEL);
+
     if (!LISTENERS[this.handle]) LISTENERS[this.handle] = {};
     var dict = LISTENERS[this.handle];
     if (!dict[type]) dict[type] = [];
@@ -57,11 +69,6 @@ Object.defineProperty(Node.prototype, 'innerHTML', {
 Object.defineProperty(Node.prototype, 'textContent', {
     get: function() {
         return call_python("textContent", this.handle);
-    }
-});
-Object.defineProperty(document, 'cookie', {
-    get: function() {
-        return call_python("cookie");
     }
 });
 

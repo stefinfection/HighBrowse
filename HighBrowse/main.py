@@ -27,11 +27,13 @@ class ElementNode:
     style: {} = None
     show_bullet: bool = False
     handle: int = 0
+    event_interps: set = None
     pseudoClasses: set = None
 
     def __post_init__(self):
         self.style = self.compute_style()
         self.pseudoClasses = set()
+        self.event_interps = set()
 
     def compute_style(self):
         style = {}
@@ -564,12 +566,14 @@ class Browser:
     nodes: ElementNode = None
     rules: [] = None
     display_list: [] = None
-    js: dukpy.JSInterpreter = None
+    js_interpreters: {} = None
     js_handles: {} = None
     timer: 'Timer' = None
     hovered_elt: ElementNode = None
     jar: {} = None
     pledge_map: {} = None
+    PLEDGE_LEVELS: {} = None
+    FULL_PLEDGE: int = 3
 
     def __post_init__(self):
         self.window = tkinter.Tk()
@@ -581,22 +585,34 @@ class Browser:
         self.window.bind("<Motion>", self.handle_hover)
         self.history = []
         self.timer = Timer()
-        self.js = dukpy.JSInterpreter()
+
+        # Two bytes to represent input and cookie: 0b00CI
+        # If 0, False if 1, True
+        self.js_interpreters = { 0: dukpy.JSInterpreter(), 1: dukpy.JSInterpreter(),  2: dukpy.JSInterpreter(), 3: dukpy.JSInterpreter() }
+
+        # map functions per interpreter
+        for i in self.js_interpreters:
+            js = self.js_interpreters[i]
+            js.export_function("log", print)
+            js.export_function("querySelectorAll", self.js_querySelectorAll)
+            js.export_function("evaluate", self.js_evaluate)
+            js.export_function("getAttribute", self.js_getAttribute)
+            js.export_function("setAttribute", self.js_setAttribute)
+            js.export_function("innerHTML", self.js_innerHTML)
+            js.export_function("textContent", self.js_textContent)
+            js.export_function("cookie", self.js_cookie)
+            js.export_function("sendPost", self.post)
+            js.export_function("registerListener", self.register_listener)
+
+        # read in actual code
+        for i in self.js_interpreters:
+            with open("runtime.js") as f:
+                (self.js_interpreters[i]).evaljs(f.read(), pledge=i)
+
         self.js_handles = {}
         self.jar = {}
         self.pledge_map = {}
-        self.js.export_function("log", print)
-        self.js.export_function("querySelectorAll", self.js_querySelectorAll)
-        self.js.export_function("evaluate", self.js_evaluate)
-        self.js.export_function("getAttribute", self.js_getAttribute)
-        self.js.export_function("setAttribute", self.js_setAttribute)
-        self.js.export_function("innerHTML", self.js_innerHTML)
-        self.js.export_function("textContent", self.js_textContent)
-        self.js.export_function("cookie", self.js_cookie)
-        self.js.export_function("sendPost", self.post)
-        self.js.export_function("getPledge", self.js_getPledge)
-        with open("runtime.js") as f:
-            self.js.evaljs(f.read())
+        self.PLEDGE_LEVELS = { 'input': 0b01, 'cookie': 0b10 }
 
     def browse(self, init_input, is_html):
         self.timer.start('Downloading')
@@ -608,21 +624,11 @@ class Browser:
             self.history.append(url)
             self.url = url
             host, port, path, fragment = parse_url(url)
-            # req_headers = {}
-            # if len(self.jar.items()) > 0:
-            #     cookie_string = ""
-            #     for key, value in self.jar.items():
-            #         cookie_string += "&" + key + "=" + value
-            #     req_headers = {"Cookie": cookie_string[1:]}
             req_headers = {}
             cookies = self.jar.get((host, port), {})
             if len(cookies) > 0:
                 req_headers = {"cookie": cookies}
             headers, body = request('GET', host, port, path, headers=req_headers)
-            # if "set-cookie" in headers:
-            #     kv, params = headers["set-cookie"].split(";")
-            #     key, value = kv.split("=", 1)
-            #     self.jar[key] = value
             if "set-cookie" in headers:
                 kv = headers["set-cookie"]
                 key, value = kv.split("=", 1)
@@ -634,7 +640,7 @@ class Browser:
     def parse(self, body, inner_mode, inner_elt):
         self.timer.start('Parse HTML')
         text = lex(body)
-        nodes = populate_tree(text)
+        nodes = populate_tree(text, self.PLEDGE_LEVELS)
         if inner_mode:
             inner_elt.children = nodes.children
             for child in inner_elt.children:
@@ -662,7 +668,8 @@ class Browser:
                 l_host, l_port, l_path, l_fragment = \
                     parse_url(relative_url(script, self.url))
                 header, body = request('GET', l_host, l_port, l_path)
-                self.js.evaljs(body)
+                # Get interpreter concordant w/ pledges
+                (self.js_interpreters[self.pledge_map[script]]).evaljs(body)
         self.timer.stop()
         self.re_layout()
         if inner_mode:
@@ -750,9 +757,6 @@ class Browser:
         self.re_layout()
 
     def submit_form(self, element, elm_level_params):
-        # print('submitting form...')
-        # print('element is: ', element)
-        # find form containing the button we clicked
         while element and element.tag != 'form':
             element = element.parent
         if element and not self.event("submit", element):
@@ -872,8 +876,6 @@ class Browser:
         if elt is None:
             print('Couldn\'t find element to set attribute on')
             return
-
-        # TODO: make style conditional
         elt.attributes['style'] = '{}:{};'.format(attr, val)
         self.re_layout()
 
@@ -895,29 +897,23 @@ class Browser:
 
     def js_cookie(self):
         host, port, path, fragment = parse_url(self.history[-1])
-        cookies = self.jar.get((host, port), {})
-
-        cookie_string = ""
-        for key, value in cookies.items():
-            cookie_string += "&" + key + "=" + value
-        return cookie_string[1:]
+        cookie_string = self.jar.get((host, port), '')
+        return cookie_string
 
     def event(self, eType, elt):
         cancelled = False
         if hasattr(elt, 'handle'):
             eval_string = "__runHandlers({}, \"{}\")".format(elt.handle, eType)
-            cancelled = self.js.evaljs(eval_string)
+            if elt.handle > 0 and self.js_handles[elt.handle]:
+                for interp_idx in (self.js_handles[elt.handle]).event_interps:
+                    cancelled & (self.js_interpreters[interp_idx]).evaljs(eval_string)
             return cancelled
         else:
             print('Event has no handler', eType)
             return cancelled
 
-    def js_getPledge(self, pledge_type, src):
-        script_pledges = self.pledge_map[src]
-        if script_pledges is not None:
-            return script_pledges[pledge_type]
-        else:
-            return False
+    def register_listener(self, elt_handle, interp_idx):
+        (self.js_handles[elt_handle]).event_interps.add(interp_idx)
 
 
 @dataclass
@@ -1089,18 +1085,15 @@ def find_inputs(element, out):
     return out
 
 
-# TODO: test this
+# Finds scripts and assigns pledges to them
 def find_scripts(node, out, pledge_map):
     if not isinstance(node, ElementNode):
         return
     if node.tag == "script" and "src" in node.attributes:
         out.append(node.attributes["src"])
     if node.tag == "script" and "pledge" in node.attributes:
-        pledges = node.attributes["pledge"]
-        inner_pledges = {}
-        for key in pledges:
-            inner_pledges[key] = pledges[key]
-        pledge_map[node.attributes["src"]] = inner_pledges
+        pledge_val = node.attributes["pledge"]
+        pledge_map[node.attributes["src"]] = pledge_val
     for child in node.children:
         find_scripts(child, out, pledge_map)
     return out
@@ -1201,7 +1194,7 @@ def lex(source):
 
 
 # Node Stuff Creates node tree for Text and Tags in HTML document.
-def populate_tree(tokens):
+def populate_tree(tokens, pledge_levels):
     current_node = None
     for tok in tokens:
         if isinstance(tok, Text):
@@ -1220,11 +1213,7 @@ def populate_tree(tokens):
                     if val[0] == '{':
                         val = val[1:len(val)-1]
                         pledge_pairs = val.split(',')
-                        pledge_obj = {}
-                        for pledge_pair in pledge_pairs:
-                            pledge_name, pledge_val = pledge_pair.split(':')
-                            pledge_obj[pledge_name.lower()] = pledge_val == 'True'
-                        attr_obj[name] = pledge_obj
+                        attr_obj[name] = get_pledge_value(pledge_pairs, pledge_levels)
                     else:
                         attr_obj[name.lower()] = val
 
@@ -1253,6 +1242,17 @@ def populate_tree(tokens):
                     current_node = node.parent
 
     return current_node
+
+
+def get_pledge_value(pledge_pairs, pledge_levels):
+    pledge = 0
+    for pledge_pair in pledge_pairs:
+        pledge_name, pledge_val = pledge_pair.split(':')
+        if pledge_val == 'True':
+            curr_val = pledge_levels[pledge_name]
+            pledge = curr_val + pledge
+    return pledge
+
 
 
 def find_element(x, y, layout):

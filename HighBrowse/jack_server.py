@@ -40,10 +40,8 @@ def handle_connection(conx):
 def handle_request(method, url, headers, body):
     if method == 'POST':
         params = form_decode(body)
-        #TODO: add info to ccDb
-        print('Jacked params!')
+        print('Jacked!')
         print(params)
-
     out = ''
     return headers, out
 
